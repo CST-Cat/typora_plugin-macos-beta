@@ -85,11 +85,6 @@ function execBuffered(command, args = [], options = {}) {
 
 function makeHandlers({ pluginRoot, typeMarkRoot, safePath, rgBinary }) {
   const customRoot = path.join(pluginRoot, "plugin/custom/plugins")
-  const nativeMenuState = {
-    menu: [],
-    queue: [],
-    updatedAt: null,
-  }
 
   const safeCustomPath = async (input) => {
     const resolved = await safePath(input)
@@ -114,30 +109,6 @@ function makeHandlers({ pluginRoot, typeMarkRoot, safePath, rgBinary }) {
       console.log(`[browser:${safeLevel}:${safeSource}] ${safeMessage}`)
       return { ok: true }
     },
-
-    "nativeMenu.update": async ({ menu = [] }) => {
-      if (!Array.isArray(menu)) throw new Error("menu must be an array")
-      nativeMenuState.menu = menu
-      nativeMenuState.updatedAt = new Date().toISOString()
-      return { ok: true, updatedAt: nativeMenuState.updatedAt }
-    },
-
-    "nativeMenu.get": async () => ({
-      ok: true,
-      menu: nativeMenuState.menu,
-      updatedAt: nativeMenuState.updatedAt,
-    }),
-
-    "nativeMenu.dispatch": async ({ id }) => {
-      if (!id || typeof id !== "string") throw new Error("id must be a string")
-      nativeMenuState.queue.push({ id, dispatchedAt: new Date().toISOString() })
-      return { ok: true }
-    },
-
-    "nativeMenu.poll": async () => ({
-      ok: true,
-      actions: nativeMenuState.queue.splice(0),
-    }),
 
     "fs.readFile": async ({ path: file, encoding = "utf-8" }) => {
       return await fsp.readFile(await safePath(file), encoding)

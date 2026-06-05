@@ -48,7 +48,6 @@ class RightClickMenuPlugin extends BasePlugin {
   defaultDisableHint = this.i18n.t("actHint.disabled")
   supportShortcut = !!document.querySelector(".ty-menu-shortcut")
   menuManager = new MenuManager()
-  nativeLostPluginsAdded = false
 
   style = () => ({
     menu_min_width: this.config.MENU_MIN_WIDTH,
@@ -60,13 +59,13 @@ class RightClickMenuPlugin extends BasePlugin {
     this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.allPluginsHadInjected, () => {
       setTimeout(() => {
         if (this._isMacosWebKit()) {
-          this.startMacosNativeBridge()
+          this.listenMacosNativeContextMenu()
         } else {
           this.insertLevel1()  // The 1st level menus group all plugins
-          this.insertLevel2()  // The 2nd level menus display grouped plugins
-          this.insertLevel3()  // The 3rd level menus display the actions of the plugin
-          this.listen()
         }
+        this.insertLevel2()  // The 2nd level menus display grouped plugins
+        this.insertLevel3()  // The 3rd level menus display the actions of the plugin
+        this.listen()
       }, 500)
     })
   }
@@ -94,128 +93,28 @@ class RightClickMenuPlugin extends BasePlugin {
     document.querySelector("#context-menu")?.insertAdjacentHTML("beforeend", `<li class="divider"></li>${this._level1ItemsHTML()}`)
   }
 
-  _nativeActionId = (fixedName, action = "") => `${encodeURIComponent(fixedName)}:${encodeURIComponent(action || "")}`
+  insertMacosNativeLevel1 = () => {
+    const menu = document.querySelector("#context-menu")
+    if (!menu) return false
+    if (menu.querySelector(':scope > [data-plugin-macos-root="true"]')) return true
+    menu.querySelectorAll(':scope > [data-plugin-macos-root="true"]').forEach(el => el.remove())
+    const attrs = ' data-plugin-macos-root="true"'
+    menu.insertAdjacentHTML("beforeend", `<li class="divider"${attrs}></li>${this._level1ItemsHTML(attrs)}`)
+    return true
+  }
 
-  _parseNativeActionId = id => {
-    const [fixedName, action = ""] = String(id || "").split(":")
-    return {
-      fixedName: decodeURIComponent(fixedName || ""),
-      action: decodeURIComponent(action || ""),
+  listenMacosNativeContextMenu = () => {
+    const ensure = () => {
+      if (this.insertMacosNativeLevel1()) return
+      let retry = 0
+      const timer = setInterval(() => {
+        if (this.insertMacosNativeLevel1() || ++retry > 20) clearInterval(timer)
+      }, 25)
     }
-  }
-
-  _nativeMenuItem = ({ label, id, enabled = true, children }) => ({
-    type: "item",
-    label,
-    id,
-    enabled,
-    children,
-  })
-
-  _nativeSeparator = () => ({ type: "separator" })
-
-  _nativeActionItem = (fixedName, action, label, enabled = true) => {
-    const actionId = action === undefined || action === null ? "" : action
-    return this._nativeMenuItem({
-      label,
-      id: this._nativeActionId(fixedName, actionId),
-      enabled,
-    })
-  }
-
-  _nativePluginItem = (plugin, forcedAction) => {
-    const hasCallable = this.utils.hasOverrideBasePluginFn(plugin, "call")
-    if (forcedAction) {
-      const staticAction = plugin.staticActions?.find(act => act.act_value === forcedAction)
-      const label = staticAction?.act_name || plugin.pluginName
-      return this._nativeActionItem(plugin.fixedName, forcedAction, label, !staticAction?.act_disabled)
-    }
-
-    const dynamicActions = this.utils.updatePluginDynamicActions(plugin.fixedName) || []
-    const actions = [...(plugin.staticActions || []), ...dynamicActions]
-      .filter(act => act && !act.act_hidden)
-
-    if (actions.length > 0) {
-      const children = actions.map(act => this._nativeActionItem(
-        plugin.fixedName,
-        act.act_value,
-        act.act_name || act.act_value,
-        !act.act_disabled,
-      ))
-      return this._nativeMenuItem({
-        label: plugin.pluginName,
-        id: this._nativeActionId(plugin.fixedName),
-        enabled: true,
-        children,
-      })
-    }
-
-    return this._nativeActionItem(plugin.fixedName, "", plugin.pluginName, hasCallable)
-  }
-
-  buildMacosNativeMenu = () => {
-    const findLostPluginsIfNeed = () => {
-      if (!this.config.FIND_LOST_PLUGINS || this.nativeLostPluginsAdded) return
-      const plugins = new Map(Object.entries(this.utils.getAllBasePlugins()))
-      this.config.MENUS.forEach(menu => menu.LIST.forEach(p => plugins.delete(p)))
-      const lostPlugins = [...plugins.values()].map(p => p.fixedName)
-      this.config.MENUS.at(-1).LIST.push(...lostPlugins)
-      this.nativeLostPluginsAdded = true
-    }
-
-    findLostPluginsIfNeed()
-    return this.config.MENUS.map(({ NAME, LIST = [] }) => {
-      const children = LIST.map(item => {
-        if (item === this.dividerValue) return this._nativeSeparator()
-        const [fixedName, forcedAction] = item.split(".")
-        const plugin = this.utils.getBasePlugin(fixedName)
-        return plugin ? this._nativePluginItem(plugin, forcedAction) : null
-      }).filter(Boolean)
-
-      return this._nativeMenuItem({
-        label: this.i18n._t("settings", NAME),
-        id: this._nativeActionId(NAME),
-        enabled: children.length > 0,
-        children,
-      })
-    }).filter(item => item.children?.length)
-  }
-
-  registerMacosNativeMenu = async () => {
-    try {
-      await window.__TP_MACOS__.rpc("nativeMenu.update", { menu: this.buildMacosNativeMenu() })
-    } catch (error) {
-      console.warn("[typora-plugin] failed to register macOS native menu", error)
-    }
-  }
-
-  pollMacosNativeActions = async () => {
-    try {
-      const { actions = [] } = await window.__TP_MACOS__.rpc("nativeMenu.poll")
-      actions.forEach(({ id }) => this.dispatchMacosNativeAction(id))
-    } catch {}
-  }
-
-  dispatchMacosNativeAction = id => {
-    const { fixedName, action } = this._parseNativeActionId(id)
-    if (!fixedName || fixedName.startsWith("__")) return
-    const plugin = this.utils.getBasePlugin(fixedName)
-    if (!plugin) return
-
-    this.utils.updatePluginDynamicActions(fixedName)
-    if (action) {
-      this.callPluginDynamicAction(fixedName, action)
-    } else if (!plugin.staticActions && !plugin.getDynamicActions) {
-      plugin.call?.()
-    }
-  }
-
-  startMacosNativeBridge = () => {
-    this.registerMacosNativeMenu()
-    setInterval(this.registerMacosNativeMenu, 1000)
-    setInterval(this.pollMacosNativeActions, 250)
-    document.addEventListener("contextmenu", () => setTimeout(this.registerMacosNativeMenu, 0), true)
-    document.addEventListener("selectionchange", () => setTimeout(this.registerMacosNativeMenu, 0), true)
+    ensure()
+    const target = this.utils.entities.eContent || document.querySelector("content") || document.body
+    target?.addEventListener("contextmenu", () => setTimeout(ensure), true)
+    new MutationObserver(ensure).observe(document.body, { childList: true, subtree: true })
   }
 
   insertLevel2 = () => {

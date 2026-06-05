@@ -5,7 +5,6 @@
     "build:download": "node build/index.cjs js-yaml markdown-it abc chart echarts wavedrom dataTables",
     "build:analyze": "node build/index.cjs --analyze markmap",
     "build:macos": "node build/macos-bundle.mjs",
-    "build:macos:native": "swiftc ../plugin/macos/native-menu/TyporaPluginNativeMenu.swift -O -framework AppKit -framework ApplicationServices -o ../plugin/macos/native-menu/typora-plugin-native-menu",
     "test": "node --require ../plugin/global/core/polyfill.js --test",
     "test:macos": "node --test test/macos.test.js",
     "dev": "node --env-file=.env scripts/index.js",

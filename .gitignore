@@ -3,6 +3,5 @@
 /.vscode
 /temp
 /develop/node_modules
-/plugin/macos/native-menu/typora-plugin-native-menu
 /plugin/bin/version.json
 /plugin/global/user_styles/*.css

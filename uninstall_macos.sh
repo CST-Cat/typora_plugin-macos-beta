@@ -2,7 +2,6 @@
 set -euo pipefail
 
 HELPER_LABEL="io.github.obgnail.typora-plugin-helper"
-NATIVE_MENU_LABEL="io.github.obgnail.typora-plugin-native-menu"
 DEFAULT_APP="/Applications/Typora.app"
 TYPEMARK_REL="Contents/Resources/TypeMark"
 INSTALL_ROOT="${HOME}/Library/Application Support/abnerworks.Typora/plugins/typora_plugin"
@@ -42,13 +41,6 @@ if [[ -f "$PLIST_FILE" ]]; then
   info "Stopping helper LaunchAgent"
   launchctl unload "$PLIST_FILE" 2>/dev/null || true
   rm -f "$PLIST_FILE"
-fi
-
-NATIVE_MENU_PLIST_FILE="${HOME}/Library/LaunchAgents/${NATIVE_MENU_LABEL}.plist"
-if [[ -f "$NATIVE_MENU_PLIST_FILE" ]]; then
-  info "Stopping native menu LaunchAgent"
-  launchctl unload "$NATIVE_MENU_PLIST_FILE" 2>/dev/null || true
-  rm -f "$NATIVE_MENU_PLIST_FILE"
 fi
 
 INDEX_FILE="${TYPEMARK_DIR}/index.html"

@@ -8,7 +8,7 @@ Typora 的 WebKit 页面里。
 
 - 平台定位：macOS beta，Windows/Linux 逻辑保持上游行为。
 - 测试环境：macOS 版 Typora，页面入口为 `Typora.app/Contents/Resources/TypeMark/index.html`。
-- 已验证能力：核心插件系统、配置读取写入、标签页、命令面板、原生插件右键菜单、偏好设置、markdownlint、公共弹窗/表格/表单组件、基础文件 RPC、buffered 命令执行。
+- 已验证能力：核心插件系统、配置读取写入、标签页、命令面板、右键菜单、偏好设置、markdownlint、公共弹窗/表格/表单组件、基础文件 RPC、buffered 命令执行。
 - 仍属 beta：不是完整 Node/Electron 模拟层，少数依赖深度 Node 能力或 Electron 专有能力的插件可能还需要逐项适配。
 
 ## 移植路线
@@ -28,7 +28,6 @@ Typora.app/Contents/Resources/TypeMark/index.html
       -> plugin/global/core/index.js
         -> 127.0.0.1:<random-port>/rpc + bearer token
           -> macOS helper
-          -> native menu companion (Option+RightClick)
 ```
 
 关键原则：
@@ -39,7 +38,6 @@ Typora.app/Contents/Resources/TypeMark/index.html
 - 浏览器侧只运行一个 macOS bundle：`plugin/macos/entry.bundle.js`。
 - Node/Electron 能力由 `shared-shims.js` 和本地 helper 分担。
 - helper 只监听 `127.0.0.1`，使用随机端口和 Bearer token，不暴露固定无认证端口。
-- 右键插件菜单由 Swift native companion 弹出真正的 macOS `NSMenu`；普通右键仍保留 Typora 原生菜单。
 - 不改造上游 `BasePlugin`、`BaseCustomPlugin`、`settings.default.toml`、`settings.user.toml` 的语义。
 
 ## 怎么安装
@@ -68,9 +66,6 @@ cd ..
 window.__TP_MACOS__
 ```
 
-如果安装脚本成功编译 native companion，在 Typora 编辑区按 `Option + 右键` 会打开插件菜单。
-第一次使用可能需要到系统设置里给 `typora-plugin-native-menu` 辅助功能权限。
-
 卸载：
 
 ```bash
@@ -95,7 +90,6 @@ Typora 更新后如果插件消失，重新运行：
 - 新增 `install_macos.sh` 和 `uninstall_macos.sh`。
 - 新增 `plugin/macos/loader.js`，负责从 Typora 页面加载 `entry.bundle.js`。
 - 新增 `plugin/macos/bundle-entry.js`，显式初始化 macOS runtime、注册插件模块并启动上游核心入口。
-- 新增 `plugin/macos/native-menu/TyporaPluginNativeMenu.swift`，提供接近 RClick 的 native menu companion。
 - 新增 `develop/build/macos-bundle.mjs` 和 `npm run build:macos`，使用 esbuild 生成浏览器 bundle。
 
 ### macOS runtime shim
@@ -113,7 +107,6 @@ Typora 更新后如果插件消失，重新运行：
 - RPC 必须携带 Bearer token。
 - 路径访问使用 `realpath` 和路径边界校验，避免前缀穿透和符号链接越界。
 - 支持基础文件操作、ripgrep 搜索、自定义插件读取、buffered 命令执行。
-- 新增 native menu RPC：浏览器注册菜单结构，Swift companion 读取菜单并派发 action，浏览器轮询后在页面内执行插件动作。
 
 ### 插件兼容修复
 
@@ -122,7 +115,6 @@ Typora 更新后如果插件消失，重新运行：
 - `window_tab` 增加 macOS 布局适配，修复标签页消失、标题栏重叠、新建按钮无响应等问题。
 - `sidebar_enhance` 的文件数量改为真实 DOM badge，修复窄侧边栏不显示统计的问题。
 - `markdownlint` 增加 macOS Worker 包装和点击兜底，修复语法检查按钮无响应。
-- `right_click_menu` 在 macOS 下改为 helper/native companion 桥接：`Option + 右键` 弹出系统 `NSMenu`，菜单动作回到插件层执行。
 - 公共 UI 组件 `fast-window`、`fast-table`、`fast-form`、`fast-dialog` 的 Shadow DOM 样式在 macOS 下改用用户目录 `file://` 绝对路径，修复弹窗、表格、表单界面错位。
 
 ## 测试
@@ -139,7 +131,6 @@ npm test
 - macOS helper token 校验。
 - 路径白名单、前缀相似路径、符号链接越界拒绝。
 - macOS loader/bundle artifact 检查。
-- native menu RPC 菜单注册和 action 队列。
 - 上游全量 Node 测试。
 
 ## 已知限制
@@ -147,5 +138,4 @@ npm test
 - `child_process.spawn` 目前是 buffered 兼容，不支持交互式 stdin。
 - 依赖完整 Electron API 的功能需要逐项 shim，不能假设全部可用。
 - helper 允许路径保持保守白名单，插件如果访问未授权路径会被拒绝。
-- 原生插件菜单当前使用 `Option + 右键`，不会直接修改 Typora 自带的 AppKit/WebKit 右键菜单；如果要替换普通右键，需要进一步复刻 Typora 原生菜单项。
 - 这是 beta 移植仓库，建议先用测试目录验证常用插件，再迁移正式写作工作流。

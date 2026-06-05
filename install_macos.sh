@@ -2,7 +2,6 @@
 set -euo pipefail
 
 HELPER_LABEL="io.github.obgnail.typora-plugin-helper"
-NATIVE_MENU_LABEL="io.github.obgnail.typora-plugin-native-menu"
 DEFAULT_APP="/Applications/Typora.app"
 TYPEMARK_REL="Contents/Resources/TypeMark"
 INSTALL_ROOT="${HOME}/Library/Application Support/abnerworks.Typora/plugins/typora_plugin"
@@ -60,19 +59,6 @@ done
 if [[ -z "$NODE_BIN" || ! -x "$NODE_BIN" ]]; then
   err "Node.js >= 22 is required"
   exit 1
-fi
-
-NATIVE_MENU_SRC="${SCRIPT_DIR}/plugin/macos/native-menu/TyporaPluginNativeMenu.swift"
-NATIVE_MENU_BIN="${SCRIPT_DIR}/plugin/macos/native-menu/typora-plugin-native-menu"
-if [[ -f "$NATIVE_MENU_SRC" ]]; then
-  if command -v swiftc >/dev/null 2>&1; then
-    if [[ ! -x "$NATIVE_MENU_BIN" || "$NATIVE_MENU_SRC" -nt "$NATIVE_MENU_BIN" ]]; then
-      info "Building macOS native menu companion"
-      swiftc "$NATIVE_MENU_SRC" -O -framework AppKit -framework ApplicationServices -o "$NATIVE_MENU_BIN"
-    fi
-  else
-    warn "swiftc not found; native Option+RightClick plugin menu will not be installed"
-  fi
 fi
 
 info "Installing plugin files to: $INSTALL_ROOT"
@@ -158,50 +144,9 @@ cat > "$PLIST_FILE" <<EOF
 </plist>
 EOF
 
-NATIVE_MENU_PLIST_FILE="${PLIST_DIR}/${NATIVE_MENU_LABEL}.plist"
-if [[ -x "${INSTALL_ROOT}/plugin/macos/native-menu/typora-plugin-native-menu" ]]; then
-cat > "$NATIVE_MENU_PLIST_FILE" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>${NATIVE_MENU_LABEL}</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>${INSTALL_ROOT}/plugin/macos/native-menu/typora-plugin-native-menu</string>
-  </array>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>TYPORA_PLUGIN_ROOT</key>
-    <string>${INSTALL_ROOT}</string>
-    <key>TYPORA_NATIVE_MENU_TRIGGER</key>
-    <string>option</string>
-  </dict>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
-  <key>StandardOutPath</key>
-  <string>${CONFIG_DIR}/native-menu-stdout.log</string>
-  <key>StandardErrorPath</key>
-  <string>${CONFIG_DIR}/native-menu-stderr.log</string>
-  <key>WorkingDirectory</key>
-  <string>${INSTALL_ROOT}</string>
-</dict>
-</plist>
-EOF
-fi
-
 info "Loading helper LaunchAgent"
 launchctl unload "$PLIST_FILE" 2>/dev/null || true
 launchctl load "$PLIST_FILE"
-
-if [[ -f "$NATIVE_MENU_PLIST_FILE" ]]; then
-  info "Loading native menu LaunchAgent"
-  launchctl unload "$NATIVE_MENU_PLIST_FILE" 2>/dev/null || true
-  launchctl load "$NATIVE_MENU_PLIST_FILE"
-fi
 
 TYPEMARK_LINK="${TYPEMARK_DIR}/typora-plugin-macos"
 if [[ -e "$TYPEMARK_LINK" && ! -L "$TYPEMARK_LINK" ]]; then
@@ -251,6 +196,3 @@ ok "macOS Typora Plugin installed"
 echo "Plugin root: $INSTALL_ROOT"
 echo "Helper:      127.0.0.1:${HELPER_PORT}"
 echo "Logs:        ${CONFIG_DIR}/helper-stderr.log"
-if [[ -f "$NATIVE_MENU_PLIST_FILE" ]]; then
-  echo "Native menu: Option+RightClick in Typora; grant Accessibility permission if prompted"
-fi

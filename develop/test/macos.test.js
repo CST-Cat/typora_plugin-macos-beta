@@ -12,7 +12,6 @@ const root = path.resolve(__dirname, "../..")
 const helperPath = path.join(root, "plugin/macos/helper/server.js")
 const bundlePath = path.join(root, "plugin/macos/entry.bundle.js")
 const loaderPath = path.join(root, "plugin/macos/loader.js")
-const nativeMenuSourcePath = path.join(root, "plugin/macos/native-menu/TyporaPluginNativeMenu.swift")
 
 async function mktemp() {
   return await fsp.mkdtemp(path.join(os.tmpdir(), "typora-plugin-macos-"))
@@ -138,48 +137,6 @@ describe("macOS helper server", () => {
     const payload = await result.json()
     assert.match(payload.error.message, /Path not allowed/)
   })
-
-  it("stores native menu updates and queues dispatched native menu actions", async () => {
-    tmp = await mktemp()
-    const pluginRoot = path.join(tmp, "install")
-    const typeMarkRoot = path.join(tmp, "TypeMark")
-    const connection = path.join(pluginRoot, "plugin/macos/helper/connection.json")
-    await fsp.mkdir(path.dirname(connection), { recursive: true })
-    await fsp.mkdir(typeMarkRoot, { recursive: true })
-
-    const token = "c".repeat(64)
-    child = spawn(process.execPath, [helperPath], {
-      env: {
-        ...process.env,
-        TYPORA_PLUGIN_ROOT: pluginRoot,
-        TYPORA_TYPEMARK_ROOT: typeMarkRoot,
-        TYPORA_HELPER_PORT: "0",
-        TYPORA_HELPER_TOKEN: token,
-        TYPORA_HELPER_CONNECTION_FILE: connection,
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    })
-
-    const info = await waitForFile(connection)
-    const menu = [{ type: "item", label: "Plugin", id: "plugin:", enabled: true }]
-    const update = await rpc(info.port, token, "nativeMenu.update", { menu })
-    assert.equal(update.status, 200)
-
-    const get = await rpc(info.port, token, "nativeMenu.get")
-    const getPayload = await get.json()
-    assert.deepEqual(getPayload.result.menu, menu)
-
-    const dispatch = await rpc(info.port, token, "nativeMenu.dispatch", { id: "markdownlint:lint" })
-    assert.equal(dispatch.status, 200)
-
-    const poll = await rpc(info.port, token, "nativeMenu.poll")
-    const pollPayload = await poll.json()
-    assert.deepEqual(pollPayload.result.actions.map(item => item.id), ["markdownlint:lint"])
-
-    const empty = await rpc(info.port, token, "nativeMenu.poll")
-    const emptyPayload = await empty.json()
-    assert.deepEqual(emptyPayload.result.actions, [])
-  })
 })
 
 describe("macOS bundle artifacts", () => {
@@ -190,12 +147,5 @@ describe("macOS bundle artifacts", () => {
     const bundle = await fsp.readFile(bundlePath, "utf-8")
     assert.match(bundle, /macOS bundle entry failed/)
     assert.doesNotMatch(bundle, /await module\.exports\(\)/)
-  })
-
-  it("ships the native menu companion source", async () => {
-    const source = await fsp.readFile(nativeMenuSourcePath, "utf-8")
-    assert.match(source, /CGEvent\.tapCreate/)
-    assert.match(source, /NSMenu/)
-    assert.match(source, /nativeMenu\.dispatch/)
   })
 })
