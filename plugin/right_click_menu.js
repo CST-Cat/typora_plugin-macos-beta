@@ -42,6 +42,7 @@ class MenuManager {
 class RightClickMenuPlugin extends BasePlugin {
   groupName = "typora-plugin"
   noExtraMenuGroupName = "typora-plugin-no-extra"
+  macosMenuId = "plugin-macos-context-menu"
   dividerValue = "---"
   unavailableActValue = "__not_available__"
   unavailableActName = this.i18n.t("act.disabled")
@@ -58,16 +59,21 @@ class RightClickMenuPlugin extends BasePlugin {
     this.utils.settings.autoSave(this)
     this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.allPluginsHadInjected, () => {
       setTimeout(() => {
-        this.insertLevel1()  // The 1st level menus group all plugins
+        this._isMacosWebKit() ? this.insertMacosLevel1() : this.insertLevel1()  // The 1st level menus group all plugins
         this.insertLevel2()  // The 2nd level menus display grouped plugins
         this.insertLevel3()  // The 3rd level menus display the actions of the plugin
         this.listen()
+        if (this._isMacosWebKit()) this.listenMacosContextMenu()
       }, 500)
     })
   }
 
-  insertLevel1 = () => {
-    const items = this.config.MENUS.map(({ NAME, LIST = [] }, idx) => {
+  _isMacosWebKit = () => typeof window !== "undefined" && !!window.__TP_MACOS__
+
+  _level1Selector = () => this._isMacosWebKit() ? `#${this.macosMenuId}` : "#context-menu"
+
+  _level1ItemsHTML = () => {
+    return this.config.MENUS.map(({ NAME, LIST = [] }, idx) => {
       if (LIST.length === 0) {
         return ""
       }
@@ -78,9 +84,19 @@ class RightClickMenuPlugin extends BasePlugin {
       return noExtraMenu
         ? `<li data-key="${this.noExtraMenuGroupName}" data-value="${LIST[0]}" data-idx="${idx}">${a}</li>`
         : `<li class="has-extra-menu" data-key="${this.groupName}" data-idx="${idx}">${a}</li>`
-    })
-    const html = `<li class="divider"></li>` + items.join("")
-    document.querySelector("#context-menu").insertAdjacentHTML("beforeend", html)
+    }).join("")
+  }
+
+  insertLevel1 = () => {
+    document.querySelector("#context-menu")?.insertAdjacentHTML("beforeend", `<li class="divider"></li>${this._level1ItemsHTML()}`)
+  }
+
+  insertMacosLevel1 = () => {
+    document.getElementById(this.macosMenuId)?.remove()
+    this.utils.entities.eContent.insertAdjacentHTML(
+      "beforeend",
+      `<ul id="${this.macosMenuId}" role="menu" class="dropdown-menu context-menu ext-context-menu plugin-macos-context-menu">${this._level1ItemsHTML()}</ul>`,
+    )
   }
 
   insertLevel2 = () => {
@@ -202,9 +218,10 @@ class RightClickMenuPlugin extends BasePlugin {
   listen = () => {
     const self = this
     const { menuManager } = this
+    const level1Selector = this._level1Selector()
 
     // Click on the first level menu
-    $("#context-menu").on("click", `[data-key="${this.noExtraMenuGroupName}"]`, function () {
+    $(level1Selector).on("click", `[data-key="${this.noExtraMenuGroupName}"]`, function () {
       const [fixedName, action] = (this.dataset.value || "").split(".")
       if (!fixedName || !action) {
         return false
@@ -279,6 +296,59 @@ class RightClickMenuPlugin extends BasePlugin {
     })
   }
 
+  listenMacosContextMenu = () => {
+    const firstMenu = document.getElementById(this.macosMenuId)
+    const target = this.utils.entities.eContent || document.querySelector("content") || document.body
+    if (!firstMenu || !target) return
+
+    const stopMenuEvent = ev => {
+      ev.preventDefault()
+      ev.stopPropagation()
+    }
+    const hide = () => this.hideMacosMenus()
+    const show = ev => {
+      if (ev.target.closest(`#${this.macosMenuId}, .plugin-menu-second, .plugin-menu-third, fast-window, fast-dialog, .plugin-common-menu`)) {
+        return
+      }
+      ev.preventDefault()
+      ev.stopPropagation()
+      this.hideMacosMenus()
+      this.showMacosMenu(firstMenu, ev.clientX, ev.clientY)
+      setTimeout(() => {
+        document.addEventListener("mousedown", hide, { once: true })
+        document.addEventListener("wheel", hide, { once: true, passive: true })
+      })
+    }
+
+    firstMenu.addEventListener("mousedown", ev => ev.stopPropagation())
+    firstMenu.addEventListener("contextmenu", stopMenuEvent)
+    document.querySelectorAll(".plugin-menu-second, .plugin-menu-third").forEach(menu => {
+      menu.addEventListener("mousedown", ev => ev.stopPropagation())
+      menu.addEventListener("contextmenu", stopMenuEvent)
+    })
+    target.addEventListener("contextmenu", show, true)
+    document.addEventListener("keydown", ev => {
+      if (ev.key === "Escape") hide()
+    })
+  }
+
+  showMacosMenu = (menu, x, y) => {
+    menu.classList.add("show")
+    menu.style.left = "0px"
+    menu.style.top = "0px"
+    const { width, height } = menu.getBoundingClientRect()
+    const left = Math.max(8, Math.min(x, window.innerWidth - width - 8))
+    const top = Math.max(8, Math.min(y, window.innerHeight - height - 8))
+    menu.style.left = `${left}px`
+    menu.style.top = `${top}px`
+  }
+
+  hideMacosMenus = () => {
+    document.getElementById(this.macosMenuId)?.classList.remove("show")
+    document.querySelectorAll(".plugin-menu-second, .plugin-menu-third").forEach(el => el.classList.remove("show"))
+    this.menuManager.clearAll()
+  }
+
   callPluginDynamicAction = (fixedName, action) => {
     if (action !== this.unavailableActValue) {
       this.utils.callPluginDynamicAction(fixedName, action)
@@ -287,7 +357,11 @@ class RightClickMenuPlugin extends BasePlugin {
 
   hideMenuIfNeed = key => {
     if (!this.config.RETAIN_ON_BLUR) {
-      File.editor.contextMenu.hide()
+      if (this._isMacosWebKit()) {
+        this.hideMacosMenus()
+      } else {
+        File.editor.contextMenu.hide()
+      }
       this.menuManager.clearAll()
       return
     }

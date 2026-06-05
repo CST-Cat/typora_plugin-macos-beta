@@ -3,6 +3,96 @@
   min-width: ${menu_min_width};
 }
 
+.plugin-macos-context-menu.ext-context-menu,
+body.html-for-mac .plugin-menu-second.ext-context-menu,
+body.html-for-mac .plugin-menu-third.ext-context-menu {
+  display: none;
+  position: fixed;
+  z-index: 10020;
+  min-width: 190px;
+  padding: 5px 0;
+  margin: 0;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 7px;
+  background: var(--typora-plugin-menu-bg, #fff);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.16), 0 1px 2px rgba(0, 0, 0, 0.08);
+  list-style: none;
+}
+
+.plugin-macos-context-menu.ext-context-menu.show,
+body.html-for-mac .plugin-menu-second.ext-context-menu.show,
+body.html-for-mac .plugin-menu-third.ext-context-menu.show {
+  display: block;
+}
+
+.plugin-macos-context-menu.ext-context-menu li,
+body.html-for-mac .plugin-menu-second.ext-context-menu li,
+body.html-for-mac .plugin-menu-third.ext-context-menu li {
+  position: relative;
+  min-height: 24px;
+  margin: 0;
+  padding: 0;
+  color: var(--typora-plugin-menu-color, #222);
+  cursor: default;
+  white-space: nowrap;
+}
+
+.plugin-macos-context-menu.ext-context-menu li > a,
+body.html-for-mac .plugin-menu-second.ext-context-menu li > a,
+body.html-for-mac .plugin-menu-third.ext-context-menu li > a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 24px;
+  padding: 3px 14px;
+  color: inherit;
+  text-decoration: none;
+  box-sizing: border-box;
+}
+
+.plugin-macos-context-menu.ext-context-menu li:hover,
+body.html-for-mac .plugin-menu-second.ext-context-menu li:hover,
+body.html-for-mac .plugin-menu-third.ext-context-menu li:hover,
+.plugin-macos-context-menu.ext-context-menu li.active,
+body.html-for-mac .plugin-menu-second.ext-context-menu li.active {
+  color: #fff;
+  background: #0a84ff;
+}
+
+.plugin-macos-context-menu.ext-context-menu .divider,
+body.html-for-mac .plugin-menu-second.ext-context-menu .divider,
+body.html-for-mac .plugin-menu-third.ext-context-menu .divider {
+  min-height: 1px;
+  height: 1px;
+  margin: 5px 0;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.08);
+  pointer-events: none;
+}
+
+.plugin-macos-context-menu.ext-context-menu li.disabled,
+body.html-for-mac .plugin-menu-second.ext-context-menu li.disabled,
+body.html-for-mac .plugin-menu-third.ext-context-menu li.disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+body.plugin-dark-mode .plugin-macos-context-menu.ext-context-menu,
+body.plugin-dark-mode.html-for-mac .plugin-menu-second.ext-context-menu,
+body.plugin-dark-mode.html-for-mac .plugin-menu-third.ext-context-menu {
+  --typora-plugin-menu-bg: #2b2b2d;
+  --typora-plugin-menu-color: #f2f2f2;
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.28);
+}
+
+body.plugin-dark-mode .plugin-macos-context-menu.ext-context-menu .divider,
+body.plugin-dark-mode.html-for-mac .plugin-menu-second.ext-context-menu .divider,
+body.plugin-dark-mode.html-for-mac .plugin-menu-third.ext-context-menu .divider {
+  background: rgba(255, 255, 255, 0.12);
+}
+
 #context-menu > li:not([data-key="typora-plugin"]) {
   display: ${menu_option_display};
 }
