@@ -35,6 +35,69 @@ const createLinterClient = (workerPath, hooks, contentProvider) => {
   }
 }
 
+const createMacosLinterClient = (hooks, contentProvider) => {
+  const ACTION = { CHECK: "check", FIX: "fix" }
+  const { onCheck, onFix, onError } = hooks
+  let LIB
+  let RULE_CONFIG
+  let CUSTOM_RULES
+
+  const report = (message, level = "info") => {
+    window.__TP_MACOS__?.rpc?.("diagnostic.log", {
+      source: "markdownlint",
+      level,
+      message,
+    }).catch(() => {})
+  }
+  const loadCustomRule = file => {
+    const normalized = String(file || "").replace(/\\/g, "/")
+    if (normalized.endsWith("/plugin/markdownlint/custom-rules.js") || normalized === "plugin/markdownlint/custom-rules.js") {
+      return require("./custom-rules.js")
+    }
+    throw new Error(`Custom markdownlint rule is not available in macOS WebKit mode: ${file}`)
+  }
+  const configure = async ({ ruleConfig, customRuleFiles = [] } = {}) => {
+    LIB = require("./markdownlint.min.js")
+    const helpers = require("./markdownlint-rule-helpers.min.js")
+    RULE_CONFIG = ruleConfig
+    const customRuleLoaders = []
+    for (const file of customRuleFiles) {
+      try {
+        customRuleLoaders.push(loadCustomRule(file))
+      } catch (error) {
+        report(error?.message || String(error), "warn")
+      }
+    }
+    CUSTOM_RULES = customRuleLoaders.flatMap(define => define(helpers))
+    report(`configured markdownlint@${LIB.getVersion()} with ${CUSTOM_RULES.length} custom rules`)
+  }
+  const run = async (action, customPayload = {}) => {
+    try {
+      if (!LIB) await configure()
+      const content = await contentProvider()
+      if (action === ACTION.FIX) {
+        if (customPayload.fixInfo?.length) onFix(LIB.applyFixes(content, customPayload.fixInfo))
+        return
+      }
+      const result = await LIB.lint({ strings: { content }, config: RULE_CONFIG, customRules: CUSTOM_RULES })
+      const fixInfos = result.content || []
+      report(`checked ${fixInfos.length} issues in ${content.length} chars`)
+      onCheck(fixInfos)
+    } catch (error) {
+      const message = error?.stack || error?.message || String(error)
+      report(message, "error")
+      onError({ message })
+    }
+  }
+
+  return {
+    configure,
+    close: () => {},
+    check: () => run(ACTION.CHECK),
+    fix: (fixInfo) => run(ACTION.FIX, { fixInfo }),
+  }
+}
+
 const toFileUrl = path => {
   if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return path
   return `file://${String(path).split("/").map(encodeURIComponent).join("/")}`
@@ -111,11 +174,10 @@ class MarkdownlintPlugin extends BasePlugin {
     const workerPath = window.__TP_MACOS__
       ? this.utils.joinPluginPath("plugin/markdownlint/linter-worker.js")
       : "plugin/markdownlint/linter-worker.js"
-    const client = createLinterClient(
-      workerPath,
-      { onCheck: this._onCheck, onFix: this._onFix, onError: event => console.error(event.message) },
-      this._getLintContent,
-    )
+    const hooks = { onCheck: this._onCheck, onFix: this._onFix, onError: event => console.error(event.message) }
+    const client = window.__TP_MACOS__
+      ? createMacosLinterClient(hooks, this._getLintContent)
+      : createLinterClient(workerPath, hooks, this._getLintContent)
     this.linter = {
       configure: async ({ ruleConfig = this.config.RULE_CONFIG, customRuleFiles = this.config.CUSTOM_RULE_FILES, persistent = false } = {}) => {
         if (persistent) {

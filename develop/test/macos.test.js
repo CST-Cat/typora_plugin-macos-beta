@@ -146,6 +146,7 @@ describe("macOS bundle artifacts", () => {
 
     const bundle = await fsp.readFile(bundlePath, "utf-8")
     assert.match(bundle, /macOS bundle entry failed/)
+    assert.match(bundle, /createMacosLinterClient/)
     assert.doesNotMatch(bundle, /await module\.exports\(\)/)
   })
 })
