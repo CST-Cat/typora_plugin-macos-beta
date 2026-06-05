@@ -1,5 +1,7 @@
 # Typora Plugin macOS Beta 移植说明
 
+[跳转到测试文档](../../test/test.md)
+
 这是 `obgnail/typora_plugin` 的 macOS beta 移植分支。目标不是改写插件 API，也不是迁移到
 `typora-community-plugin`，而是在尽量保留上游插件体系的前提下，让现有插件可以运行在 macOS 版
 Typora 的 WebKit 页面里。
