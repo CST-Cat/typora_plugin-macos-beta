@@ -8,6 +8,16 @@ const createSheet = (name) => {
 
 const sharedSheets = ["font-awesome", "ionicons"].map(createSheet).filter(Boolean)
 
+const toFileUrl = path => `file://${String(path).split("/").map(encodeURIComponent).join("/")}`
+
+const componentStyleLink = name => {
+  const href = (typeof window !== "undefined" && window.__TP_MACOS__)
+    ? toFileUrl(`${global.dirname}/plugin/global/core/components/${name}/index.css`)
+    : `./plugin/global/core/components/${name}/index.css`
+  return `<link rel="stylesheet" href="${href}" crossorigin="anonymous">`
+}
+
 module.exports = {
+  componentStyleLink,
   sharedSheets,
 }

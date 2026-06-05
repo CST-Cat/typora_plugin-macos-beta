@@ -1,8 +1,10 @@
-const { sharedSheets } = require("../common")
+const common = require("../common")
+const { sharedSheets } = common
+const componentStyleLink = common.componentStyleLink || (name => `<link rel="stylesheet" href="./plugin/global/core/components/${name}/index.css" crossorigin="anonymous">`)
 
 customElements.define("fast-table", class extends HTMLElement {
   static _template =
-    `<link rel="stylesheet" href="./plugin/global/core/components/fast-table/index.css" crossorigin="anonymous">
+    `${componentStyleLink("fast-table")}
     <div class="table-wrapper"><table><thead><tr></tr></thead><tbody></tbody></table></div>
     <div class="no-data hidden">No Data</div>`
 

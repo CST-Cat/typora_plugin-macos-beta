@@ -1,9 +1,11 @@
-const { sharedSheets } = require("../common")
+const common = require("../common")
+const { sharedSheets } = common
+const componentStyleLink = common.componentStyleLink || (name => `<link rel="stylesheet" href="./plugin/global/core/components/${name}/index.css" crossorigin="anonymous">`)
 const utils = require("../../utils")
 
 customElements.define("fast-window", class extends HTMLElement {
   static _template =
-    `<link rel="stylesheet" href="./plugin/global/core/components/fast-window/index.css" crossorigin="anonymous">
+    `${componentStyleLink("fast-window")}
     <div class="title-bar" part="title-bar">
       <div class="title-name"></div>
       <div class="title-buttons"></div>

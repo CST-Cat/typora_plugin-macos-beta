@@ -1,9 +1,11 @@
-const { sharedSheets } = require("../common")
+const common = require("../common")
+const { sharedSheets } = common
+const componentStyleLink = common.componentStyleLink || (name => `<link rel="stylesheet" href="./plugin/global/core/components/${name}/index.css" crossorigin="anonymous">`)
 const utils = require("../../utils")
 const i18n = require("../../i18n")
 
 class FastForm extends HTMLElement {
-  static style = `<link rel="stylesheet" href="./plugin/global/core/components/fast-form/index.css" crossorigin="anonymous">`
+  static style = componentStyleLink("fast-form")
   static controls = {}
   static features = {}
   static layouts = {}

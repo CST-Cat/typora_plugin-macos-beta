@@ -202,3 +202,18 @@ body.pin-outline #plugin-window-tab .tab-bar {
 #plugin-window-tab .add-icon::after {
   transform: translate(-50%, -50%) rotate(90deg);
 }
+
+body.plugin-window-tab-macos #plugin-window-tab {
+  top: var(--plugin-window-tab-top, 40px);
+  left: var(--plugin-window-tab-left, 0px);
+  width: calc(100% - var(--plugin-window-tab-left, 0px));
+}
+
+body.plugin-window-tab-macos #plugin-window-tab .tab-bar {
+  width: 100%;
+  padding-left: var(--plugin-window-tab-traffic-left, 92px);
+}
+
+body.plugin-window-tab-macos.pin-outline #plugin-window-tab .tab-bar {
+  width: 100%;
+}

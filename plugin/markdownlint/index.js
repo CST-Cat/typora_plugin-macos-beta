@@ -1,13 +1,19 @@
 const createLinterClient = (workerPath, hooks, contentProvider) => {
   const ACTION = { CONFIGURE: "configure", CLOSE: "close", CHECK: "check", FIX: "fix" }
   const { onCheck, onFix, onError } = hooks
-  const worker = new Worker(workerPath)
+  const worker = createWorker(workerPath)
   worker.onmessage = event => {
     const { action, result } = event.data
     const onEvent = (action === ACTION.FIX) ? onFix : onCheck
     onEvent(result)
   }
-  worker.onerror = event => onError(event)
+  worker.onerror = event => onError({
+    message: [
+      event.message || "Markdownlint worker error",
+      event.filename || workerPath,
+      event.lineno != null ? `${event.lineno}:${event.colno || 0}` : "",
+    ].filter(Boolean).join("\n"),
+  })
   const send = (action, customPayload) => worker.postMessage({ action, payload: { content: contentProvider(), ...customPayload } })
   return {
     configure: (payload) => send(ACTION.CONFIGURE, payload),
@@ -15,6 +21,43 @@ const createLinterClient = (workerPath, hooks, contentProvider) => {
     check: () => send(ACTION.CHECK),
     fix: (fixInfo) => send(ACTION.FIX, { fixInfo }),
   }
+}
+
+const toFileUrl = path => {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return path
+  return `file://${String(path).split("/").map(encodeURIComponent).join("/")}`
+}
+
+const createWorker = workerPath => {
+  if (typeof window === "undefined" || !window.__TP_MACOS__) {
+    return new Worker(workerPath)
+  }
+
+  const workerUrl = toFileUrl(workerPath)
+  const source = `
+    const __moduleCache = new Map()
+    const __toFileUrl = path => {
+      if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return path
+      return "file://" + String(path).split("/").map(encodeURIComponent).join("/")
+    }
+    self.require = id => {
+      const url = __toFileUrl(id)
+      if (__moduleCache.has(url)) return __moduleCache.get(url)
+      const previousModule = self.module
+      const previousExports = self.exports
+      const module = { exports: {} }
+      self.module = module
+      self.exports = module.exports
+      importScripts(url)
+      __moduleCache.set(url, module.exports)
+      self.module = previousModule
+      self.exports = previousExports
+      return module.exports
+    }
+    importScripts(${JSON.stringify(workerUrl)})
+  `
+  const blob = new Blob([source], { type: "text/javascript" })
+  return new Worker(URL.createObjectURL(blob))
 }
 
 class MarkdownlintPlugin extends BasePlugin {
@@ -53,8 +96,11 @@ class MarkdownlintPlugin extends BasePlugin {
   }
 
   init = () => {
+    const workerPath = window.__TP_MACOS__
+      ? this.utils.joinPluginPath("plugin/markdownlint/linter-worker.js")
+      : "plugin/markdownlint/linter-worker.js"
     const client = createLinterClient(
-      "plugin/markdownlint/linter-worker.js",
+      workerPath,
       { onCheck: this._onCheck, onFix: this._onFix, onError: event => console.error(event.message) },
       () => this.utils.getCurrentFileContent(),
     )
@@ -115,7 +161,7 @@ class MarkdownlintPlugin extends BasePlugin {
     }
 
     const fnMap = {
-      close: () => this.call(),
+      close: () => this.entities.panel.toggle(true),
       refresh: () => {
         this.linter.check()
         this.utils.notification.show(this.i18n.t("success.refresh"))
@@ -134,13 +180,30 @@ class MarkdownlintPlugin extends BasePlugin {
     }
 
     const onElementEvent = () => {
-      this.entities.button?.addEventListener("mousedown", ev => {
+      const onIndicatorMouseDown = ev => {
         if (ev.button === 0) {
+          ev.preventDefault()
+          ev.stopPropagation()
           this.call()
         } else if (ev.button === 2) {
+          ev.preventDefault()
+          ev.stopPropagation()
           fnMap[this.config.RIGHT_CLICK_INDICATOR_ACTION]?.()
         }
-      })
+      }
+      const isIndicatorHit = ev => {
+        const rect = this.entities.button?.getBoundingClientRect()
+        if (!rect) return false
+        const hitPadding = 12
+        return ev.clientX >= rect.left - hitPadding
+          && ev.clientX <= rect.right + hitPadding
+          && ev.clientY >= rect.top - hitPadding
+          && ev.clientY <= rect.bottom + hitPadding
+      }
+      this.entities.button?.addEventListener("mousedown", onIndicatorMouseDown)
+      document.addEventListener("mousedown", ev => {
+        if (isIndicatorHit(ev)) onIndicatorMouseDown(ev)
+      }, true)
       this.entities.wrap.addEventListener("mousedown", ev => {
         ev.preventDefault()
         ev.stopPropagation()
@@ -159,8 +222,27 @@ class MarkdownlintPlugin extends BasePlugin {
   }
 
   call = () => {
-    this.entities.panel.toggle()
-    this.linter.check()
+    window.__TP_MACOS__?.rpc?.("diagnostic.log", {
+      source: "markdownlint",
+      level: "info",
+      message: "Markdownlint panel requested",
+    }).catch(() => {})
+    const panel = this.entities.panel
+    panel.hidden = false
+    panel.removeAttribute("hidden")
+    panel.style.setProperty("display", "flex", "important")
+    panel.style.setProperty("visibility", "visible", "important")
+    panel.style.setProperty("opacity", "1", "important")
+    panel.style.setProperty("right", "64px", "important")
+    panel.style.setProperty("left", "auto", "important")
+    panel.style.setProperty("top", "128px", "important")
+    panel.style.setProperty("width", "min(620px, calc(100vw - 96px))", "important")
+    panel.style.setProperty("height", "min(420px, calc(100vh - 176px))", "important")
+    panel.style.setProperty("z-index", "10001", "important")
+    panel.style.setProperty("transform", "none", "important")
+    panel.classList.remove("hiding", "plugin-common-hidden")
+    panel.classList.add("showing")
+    setTimeout(() => this.linter.check(), 0)
   }
 
   settings = async () => {

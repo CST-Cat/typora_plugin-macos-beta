@@ -745,7 +745,13 @@ class utils {
   static joinPluginPath = (...paths) => PATH.join(this.getDirname(), ...paths)
   static resolvePluginPath = (...paths) => PATH.resolve(this.getDirname(), ...paths)
   static getUserSpaceFile = (file = "") => this.joinPluginPath("./plugin/global/user_space", file)
-  static require = (...paths) => require(this.joinPluginPath(...paths))
+  static require = (...paths) => {
+    const absolutePath = this.joinPluginPath(...paths)
+    if (typeof window !== "undefined" && window.__TP_MACOS__?.requirePlugin) {
+      return window.__TP_MACOS__.requirePlugin(absolutePath, paths)
+    }
+    return require(absolutePath)
+  }
 
   static readFiles = async files => Promise.all(files.map(file => FS_EXTRA.readFile(file, "utf-8").catch(() => undefined)))
   static existPath = async path => FS_EXTRA.access(path).then(() => true).catch(() => false)
@@ -799,7 +805,12 @@ class utils {
       dirFilter = (name, path, stats) => true,
       fileParamsGetter = (path, file, dir, stats) => ({ path, file, dir, stats }),
       onEntity = null,
-      onNonFatalError = (path, err) => console.error(`Error processing path ${path}:`, err),
+      onNonFatalError = (path, err) => {
+        const isMacosWebKit = typeof window !== "undefined" && window.__TP_MACOS__
+        const denied = ["EPERM", "EACCES"].includes(err?.code) || /\b(EPERM|EACCES)\b/.test(err?.message || "")
+        const log = isMacosWebKit && denied ? console.warn : console.error
+        log(`Error processing path ${path}:`, err)
+      },
       onFinished = null,
       semaphore = 20,
       maxDepth = -1,
@@ -949,6 +960,10 @@ class utils {
   static parseMarkdownInline = (content, options = {}) => this.getMarkdownIt().parseInline(content, options)
 
   static fetch = async (url, { proxy = "", timeout = 3 * 60 * 1000, ...args } = {}) => {
+    if (typeof window !== "undefined" && window.__TP_MACOS__) {
+      const signal = timeout ? AbortSignal.timeout(timeout) : undefined
+      return window.fetch(url, { signal, ...args })
+    }
     let signal, agent
     if (timeout) {
       signal = AbortSignal.timeout(timeout)

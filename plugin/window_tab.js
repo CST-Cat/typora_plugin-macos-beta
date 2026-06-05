@@ -222,6 +222,9 @@ class TabManager {
   }
 
   async checkExist() {
+    if (typeof window !== "undefined" && window.__TP_MACOS__) {
+      return
+    }
     if (this.count === 0) {
       await this.hooks.onEmpty()
       return
@@ -333,7 +336,8 @@ class WindowTabPlugin extends BasePlugin {
         fileMissingWhenOpen: false, bundleFile: null, zip: null,
       }
       await this.utils.reload()
-      document.getElementById("title-text").innerHTML = "Typora"
+      const titleText = document.getElementById("title-text")
+      if (titleText) titleText.innerHTML = "Typora"
       document.querySelector(".file-library-node.active")?.classList.remove("active")
     },
     onExit: () => this.utils.exitTypora(),
@@ -341,8 +345,10 @@ class WindowTabPlugin extends BasePlugin {
 
   prepare = () => {
     if (window._options.framelessWindow && this.config.HIDE_WINDOW_TITLE_BAR) {
-      document.querySelector("header").style.zIndex = "897"
-      document.getElementById("top-titlebar").style.display = "none"
+      const header = document.querySelector("header")
+      const titleBar = document.getElementById("top-titlebar")
+      if (header) header.style.zIndex = "897"
+      if (titleBar) titleBar.style.display = "none"
     }
     if (this.config.LAST_TAB_CLOSE_ACTION === "blankPage" && this.utils.isBetaVersion) {
       this.config.LAST_TAB_CLOSE_ACTION = "reconfirm"
@@ -373,18 +379,56 @@ class WindowTabPlugin extends BasePlugin {
       newTabButton: document.querySelector("#plugin-window-tab .add-button"),
       windowTab: document.querySelector("#plugin-window-tab"),
     }
+    document.body.classList.toggle("plugin-window-tab-macos", this._isMacosWebKit())
   }
 
   process = () => {
+    const logMacos = (message, data) => {
+      if (!window.__TP_MACOS__?.rpc) return
+      window.__TP_MACOS__.rpc("diagnostic.log", {
+        source: "window_tab",
+        level: "info",
+        message: data === undefined ? message : `${message}: ${data}`,
+      }).catch(this.utils.noop)
+    }
+    const openInitialCurrentFile = () => {
+      if (this.tab.count > 0) return
+      const open = () => {
+        if (this.tab.count > 0) return true
+        const filePath = this.utils.getFilePath()
+        if (!filePath) return false
+        this.tab.open(filePath)
+        logMacos("initial tab opened", filePath)
+        return true
+      }
+      if (open()) return
+      this.utils.waitUntil(open, 100, 5000)
+        .catch(() => logMacos("initial tab skipped", "empty file path"))
+    }
     const handleLifeCycle = () => {
       this._hideTabBar()
       this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.fileOpened, path => this.tab.open(path))
       this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.fileContentLoaded, this._scrollContent)
-      this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.toggleSettingPage, hide => this.entities.windowTab.style.visibility = hide ? "hidden" : "initial")
+      this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.toggleSettingPage, hide => {
+        if (this.entities.windowTab) this.entities.windowTab.style.visibility = hide ? "hidden" : "initial"
+      })
+      const updateMacosLayout = this.utils.debounce(() => {
+        this._updateMacosLayout()
+        this._adjustContentTop()
+      }, 80)
+      if (this._isMacosWebKit()) {
+        this._updateMacosLayout()
+        window.addEventListener("resize", updateMacosLayout)
+        this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.afterToggleSidebar, updateMacosLayout)
+        this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.afterSetSidebarWidth, updateMacosLayout)
+      }
 
-      const isHeaderReady = () => this.utils.isBetaVersion ? this.entities.header.getBoundingClientRect().height : true
+      const isHeaderReady = () => this.utils.isBetaVersion ? !!this.entities.header?.getBoundingClientRect().height : true
       const adjustTop = () => setTimeout(() => {
-        if (!this.config.HIDE_WINDOW_TITLE_BAR) {
+        if (!this.entities.windowTab) return
+        if (this._isMacosWebKit()) {
+          this._updateMacosLayout()
+        } else if (!this.config.HIDE_WINDOW_TITLE_BAR && this.entities.header) {
           const { height, top } = this.entities.header.getBoundingClientRect()
           this.entities.windowTab.style.top = `${height + top}px`
         }
@@ -392,15 +436,23 @@ class WindowTabPlugin extends BasePlugin {
         this._adjustContentTop()
       }, 200)
       this.utils.waitUntil(isHeaderReady, 50, 1000).catch(this.utils.noop).finally(adjustTop)
+      openInitialCurrentFile()
     }
     const handleClick = () => {
+      if (!this.entities.newTabButton || !this.entities.tabWrapper) return
       this.entities.newTabButton.addEventListener("click", async ev => {
-        const { canceled, filePaths } = await JSBridge.invoke("dialog.showOpenDialog", {
-          properties: ["openFile"],
-          filters: [{ name: "Markdown Files", extensions: ["md", "markdown", "mdown", "mkd", "mdx"] }],
-        })
-        if (!canceled && filePaths?.length > 0) {
-          this.utils.openFile(filePaths[0], true)
+        ev.preventDefault()
+        ev.stopPropagation()
+        if (this._isMacosWebKit()) {
+          await this._createMacosNewFile()
+        } else {
+          const { canceled, filePaths } = await JSBridge.invoke("dialog.showOpenDialog", {
+            properties: ["openFile"],
+            filters: [{ name: "Markdown Files", extensions: ["md", "markdown", "mdown", "mkd", "mdx"] }],
+          })
+          if (!canceled && filePaths?.length > 0) {
+            this.utils.openFile(filePaths[0], true)
+          }
         }
       })
 
@@ -421,6 +473,7 @@ class WindowTabPlugin extends BasePlugin {
       })
     }
     const handleScroll = () => {
+      if (!this.entities.content) return
       this.entities.content.addEventListener("scroll", this.utils.debounce(() => {
         const cur = this.tab.current
         if (cur) cur.scrollTop = this.entities.content.scrollTop
@@ -621,6 +674,7 @@ class WindowTabPlugin extends BasePlugin {
       }, { passive: true })
     }
     const handleMiddleClick = () => {
+      if (!this.entities.tabWrapper) return
       this.entities.tabWrapper.addEventListener("mousedown", ev => {
         if (ev.button === 1) {
           const idx = parseInt(ev.target.closest(".tab-container")?.dataset.idx)
@@ -634,6 +688,7 @@ class WindowTabPlugin extends BasePlugin {
       })
     }
     const handleContextMenu = () => {
+      if (!this.entities.tabWrapper) return
       let tabIdx = -1
       const getMenuItems = (ev) => {
         const tabEl = ev.target.closest(".tab-container")
@@ -671,12 +726,12 @@ class WindowTabPlugin extends BasePlugin {
           bridge.callHandler("quickOpen.stopQuery")
         }
       }
-      document.querySelector(".typora-quick-open-list").addEventListener("mousedown", ev => {
+      document.querySelector(".typora-quick-open-list")?.addEventListener("mousedown", ev => {
         const target = ev.target.closest(".typora-quick-open-item")
         // Changed the original click behavior to ctrl+click.
         if (target && !this.utils.metaKeyPressed(ev)) openQuickTab(target, ev)
       }, true)
-      document.querySelector("#typora-quick-open-input > input").addEventListener("keydown", ev => {
+      document.querySelector("#typora-quick-open-input > input")?.addEventListener("keydown", ev => {
         if (ev.key === "Enter") {
           const el = document.querySelector(".typora-quick-open-item.active")
           if (el) openQuickTab(el, ev)
@@ -728,6 +783,77 @@ class WindowTabPlugin extends BasePlugin {
     if (this.config.CONTEXT_MENU.length) handleContextMenu()
   }
 
+  _isMacosWebKit = () => typeof window !== "undefined" && !!window.__TP_MACOS__
+
+  _createMacosNewFile = async () => {
+    const dispatchNativeClick = target => {
+      if (!target) return false
+      for (const type of ["mousedown", "mouseup", "click"]) {
+        target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }))
+      }
+      return true
+    }
+
+    const nativeNewFileButton = document.querySelector("#sidebar-new-file-btn")
+    if (dispatchNativeClick(nativeNewFileButton)) return
+
+    const menuNewFileAction = document.querySelector('[data-action="new_file"]')
+    if (dispatchNativeClick(menuNewFileAction)) return
+
+    try {
+      if (window.JSBridge?.invoke) {
+        await window.JSBridge.invoke("controller.runCommand", "new_file")
+      } else if (window.bridge?.callHandler) {
+        await new Promise(resolve => window.bridge.callHandler("controller.runCommand", "new_file", resolve))
+      }
+    } catch (err) {
+      window.__TP_MACOS__?.rpc?.("diagnostic.log", {
+        source: "window_tab",
+        level: "warn",
+        message: `new file action failed: ${err?.message || err}`,
+      }).catch(this.utils.noop)
+      throw err
+    }
+  }
+
+  _getMacosTitlebarBottom = () => {
+    const titleText = document.getElementById("title-text")
+    const candidates = [
+      document.getElementById("top-titlebar"),
+      this.entities.header,
+      titleText?.closest("#top-titlebar"),
+      titleText?.parentElement,
+    ].filter(Boolean)
+    const bottoms = candidates
+      .map(el => {
+        const style = window.getComputedStyle(el)
+        if (style.display === "none" || style.visibility === "hidden") return 0
+        const rect = el.getBoundingClientRect()
+        return rect.width > 0 && rect.height > 0 ? rect.top + rect.height : 0
+      })
+      .filter(bottom => bottom > 0 && bottom < 120)
+    return Math.ceil(Math.max(40, ...bottoms))
+  }
+
+  _updateMacosLayout = () => {
+    if (!this._isMacosWebKit() || !this.entities.windowTab) return
+    const sidebar = document.querySelector("#typora-sidebar")
+    const sidebarRect = sidebar?.getBoundingClientRect()
+    const sidebarStyle = sidebar ? window.getComputedStyle(sidebar) : null
+    const sidebarVisible = sidebarRect
+      && sidebarRect.width > 0
+      && sidebarStyle?.display !== "none"
+      && sidebarStyle?.visibility !== "hidden"
+    const sidebarWidth = sidebarVisible ? Math.ceil(sidebarRect.width) : 0
+    const tabHeight = Math.ceil(this.entities.windowTab.getBoundingClientRect().height || 40)
+    const titlebarBottom = this._getMacosTitlebarBottom()
+    this.entities.windowTab.style.removeProperty("top")
+    document.documentElement.style.setProperty("--plugin-window-tab-left", `${sidebarWidth}px`)
+    document.documentElement.style.setProperty("--plugin-window-tab-traffic-left", sidebarWidth ? "0px" : "92px")
+    document.documentElement.style.setProperty("--plugin-window-tab-top", `${titlebarBottom}px`)
+    document.documentElement.style.setProperty("--plugin-window-tab-height", `${tabHeight}px`)
+  }
+
   getDynamicActions = () => this.i18n.fillActions([
     { act_value: "open_save_tabs", act_hidden: !this.manualSaveStorage.exist() },
     { act_value: "toggle_file_ext", act_state: this.config.TRIM_FILE_EXT },
@@ -757,34 +883,36 @@ class WindowTabPlugin extends BasePlugin {
   }
 
   _hideTabBar = () => {
-    if (this.utils.isShown(this.entities.windowTab) && this.tab.count === 0) {
+    if (this.entities.windowTab && this.utils.isShown(this.entities.windowTab) && this.tab.count === 0) {
       this.utils.hide(this.entities.windowTab)
       this._resetContentTop()
     }
   }
 
   _showTabBar = () => {
-    if (this.utils.isHidden(this.entities.windowTab)) {
+    if (this.entities.windowTab && this.utils.isHidden(this.entities.windowTab)) {
       this.utils.show(this.entities.windowTab)
       this._adjustContentTop()
     }
   }
 
   _adjustContentTop = () => {
+    if (!this.entities.windowTab || !this.entities.content || !this.entities.source) return
     const { height, top } = this.entities.windowTab.getBoundingClientRect()
     if (height + top === 0) {  // Equal to 0, indicating that there are no tabs.
       this._resetContentTop()
     } else {
-      const { height: headerHeight, top: headerTop } = document.querySelector("header").getBoundingClientRect()
-      const t = Math.max(top + height, headerHeight + headerTop) + "px"
+      const headerRect = document.querySelector("header")?.getBoundingClientRect()
+      const headerBottom = headerRect ? headerRect.height + headerRect.top : 0
+      const t = Math.max(top + height, headerBottom) + "px"
       this.entities.content.style.top = t
       this.entities.source.style.top = t
     }
   }
 
   _resetContentTop = () => {
-    this.entities.content.style.removeProperty("top")
-    this.entities.source.style.removeProperty("top")
+    this.entities.content?.style.removeProperty("top")
+    this.entities.source?.style.removeProperty("top")
   }
 
   _startCheckTabsInterval = () => {
@@ -802,6 +930,7 @@ class WindowTabPlugin extends BasePlugin {
   }
 
   _insertTabDiv = (filePath, showName, idx) => {
+    if (!this.entities.tabWrapper) return
     const hint = this.config.SHOW_FULL_PATH_ON_HOVER ? `ty-hint="${filePath}"` : ""
     const btn = this.config.SHOW_TAB_CLOSE_BUTTON ? `<div class="close-button"><div class="close-icon"></div></div>` : ""
     this.entities.tabWrapper.insertAdjacentHTML("beforeend",
@@ -859,6 +988,7 @@ class WindowTabPlugin extends BasePlugin {
   }
 
   _renderTabs = wantOpenPath => {
+    if (!this.entities.tabWrapper) return
     let currentTabEl = this.entities.tabWrapper.firstElementChild
 
     for (let idx = 0; idx < this.tab.tabs.length; idx++) {

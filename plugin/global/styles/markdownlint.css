@@ -1,10 +1,15 @@
 #plugin-markdownlint {
-  top: 10%;
-  left: calc(100vw - 625px);
-  width: 600px;
+  position: fixed;
+  top: 128px;
+  right: 64px;
+  left: auto;
+  width: min(620px, calc(100vw - 96px));
+  height: min(420px, calc(100vh - 176px));
   min-width: 380px;
-  max-height: 500px;
-  z-index: 9993;
+  min-height: 280px;
+  max-height: 520px;
+  z-index: 10001;
+  --content-area-padding: 0;
 }
 
 #plugin-markdownlint::part(content-area) {
@@ -12,11 +17,15 @@
 }
 
 .plugin-markdownlint-table-wrap {
+  display: flex;
+  min-height: 0;
   flex-grow: 1;
   padding: 8px;
 }
 
 .plugin-markdownlint-table {
+  flex: 1 1 auto;
+  min-height: 0;
   --row-even-bg: transparent;
   --row-odd-bg: #fff;
   --cell-padding-y: 6px;
@@ -33,9 +42,17 @@
   margin: 7px;
   cursor: pointer;
   transition: background-color 0.1s ease 0s;
-  z-index: 9992;
+  z-index: 10002;
 }
 
 #plugin-markdownlint-button[lint-check-failed] {
   background-color: ${this.config.BUTTON_ERROR_COLOR};
+}
+
+body.html-for-mac #plugin-markdownlint-button {
+  top: 92px;
+  right: 18px;
+  margin: 0;
+  pointer-events: auto;
+  transform: translateZ(0);
 }

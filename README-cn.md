@@ -1,5 +1,7 @@
 [English](https://github.com/obgnail/typora_plugin/blob/master/README.md) | 简体中文
 
+> macOS beta 移植版：本仓库通过 WebKit bundle + 本地 helper 的方式让 Typora Plugin 运行在 macOS 版 Typora 中。移植路线、安装方式、改动清单、测试和已知限制见 [README-macos-beta.md](README-macos-beta.md)。
+
 <div align="center">
     <h1>Typora Plugin</h1>
     <img src="assets/typora_plugin.png" alt="typora_plugin" width="400">

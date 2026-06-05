@@ -1,5 +1,7 @@
 English | [简体中文](https://github.com/obgnail/typora_plugin/blob/master/README-cn.md)
 
+> macOS beta port: this repository can run Typora Plugin in macOS Typora through a WebKit bundle plus local helper. See [README-macos-beta.md](README-macos-beta.md) for the migration route, install steps, changes, tests, and known limits.
+
 <div align="center">
     <h1>Typora Plugin</h1>
     <img src="assets/typora_plugin.png" alt="typora_plugin" width="400">
