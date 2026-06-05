@@ -1,14 +1,20 @@
 .plugin-viewer-cover {
+  --viewer-z-cover: 2147483000;
+  --viewer-z-image: 2147483001;
+  --viewer-z-controls: 2147483002;
   position: fixed;
   top: 0;
   right: 0;
   left: 0;
   bottom: 0;
   height: 100vh;
-  z-index: 99997;
+  z-index: var(--viewer-z-cover) !important;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
 }
 
 #plugin-image-viewer {
+  --viewer-macos-titlebar-bottom: 0px;
   --viewer-primary: #4285f4;
   --viewer-text-main: #f3f4f6;
   --viewer-text-sub: #9ca3af;
@@ -18,20 +24,42 @@
   --viewer-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.3);
   --dummy-blur-placeholder: ${blurLevel};
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  isolation: isolate;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-app-region: no-drag;
+}
+
+#plugin-image-viewer * {
+  -webkit-app-region: no-drag;
+}
+
+body.plugin-image-viewer-active #top-titlebar,
+body.plugin-image-viewer-active #title-text,
+body.plugin-image-viewer-active header,
+body.plugin-image-viewer-active footer,
+body.plugin-image-viewer-active #footer-word-count-label,
+body.plugin-image-viewer-active .ty-footer {
+  pointer-events: none !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
 }
 
 #plugin-image-viewer .viewer-mask {
   background-color: rgba(0, 0, 0, ${this.config.MASK_BACKGROUND_OPACITY});
+  z-index: var(--viewer-z-cover) !important;
+  pointer-events: auto;
 }
 
 #plugin-image-viewer .viewer-image {
   position: fixed;
-  z-index: 99998;
+  z-index: var(--viewer-z-image) !important;
   height: auto;
   max-width: ${imageMaxWidth};
   max-height: ${imageMaxHeight};
   border: 0;
   transition: transform 0.2s ease 0s;
+  pointer-events: auto;
 }
 
 #plugin-image-viewer .viewer-image.dragging {
@@ -40,7 +68,7 @@
 
 #plugin-image-viewer .viewer-item {
   position: absolute;
-  z-index: 99999;
+  z-index: var(--viewer-z-controls) !important;
   top: 50%;
   transform: translateY(-50%);
   width: 48px;
@@ -52,6 +80,7 @@
   border-radius: 50%;
   color: var(--viewer-text-main);
   background-color: rgba(30, 30, 34, 0.6);
+  pointer-events: auto;
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -75,9 +104,10 @@
   position: fixed;
   display: flex;
   align-items: center;
-  z-index: 99999;
+  z-index: var(--viewer-z-controls) !important;
   width: 100%;
-  ${thumbnailPosition}: 0;
+  top: ${thumbnailTop};
+  bottom: ${thumbnailBottom};
   overflow-x: auto;
   overflow-y: hidden;
   background-color: var(--viewer-bg-panel);
@@ -85,6 +115,7 @@
   height: calc(var(--viewer-thumbnail-width) + 20px);
   scroll-padding: calc(var(--viewer-thumbnail-width) * var(--viewer-thumbnail-padding-count));
   box-sizing: border-box;
+  pointer-events: auto;
 }
 
 #plugin-image-viewer .viewer-nav::-webkit-scrollbar {
@@ -126,10 +157,11 @@
 
 #plugin-image-viewer .viewer-tool {
   position: fixed;
-  z-index: 99999;
+  z-index: var(--viewer-z-controls) !important;
   height: 52px;
   width: 100%;
-  bottom: ${toolPosition};
+  top: ${toolTop};
+  bottom: ${toolBottom};
   background-color: var(--viewer-bg-panel);
   display: flex;
   align-items: center;
@@ -137,11 +169,13 @@
   padding: 0 24px;
   box-sizing: border-box;
   color: var(--viewer-text-main);
+  pointer-events: auto;
 }
 
 #plugin-image-viewer .viewer-message {
   display: flex;
   align-items: center;
+  pointer-events: auto;
 }
 
 #plugin-image-viewer .viewer-message > div + div {
@@ -163,6 +197,7 @@
   display: flex;
   align-items: center;
   font-size: 18px;
+  pointer-events: auto;
 }
 
 #plugin-image-viewer .viewer-options > i + i {
@@ -173,6 +208,7 @@
   cursor: pointer;
   color: var(--viewer-text-sub);
   transition: color 0.2s ease;
+  pointer-events: auto;
 }
 
 #plugin-image-viewer .viewer-options > i.active,
@@ -182,9 +218,10 @@
 
 #plugin-image-viewer .viewer-waterfall {
   position: fixed;
+  top: var(--viewer-macos-titlebar-bottom);
   width: 100vw;
-  height: 100vh;
-  z-index: 99999;
+  height: calc(100vh - var(--viewer-macos-titlebar-bottom));
+  z-index: var(--viewer-z-controls) !important;
   overflow-y: auto;
   background-color: rgba(15, 15, 17, 0.98);
 }

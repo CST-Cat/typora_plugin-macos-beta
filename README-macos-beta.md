@@ -7,8 +7,11 @@ Typora 的 WebKit 页面里。
 ## 当前状态
 
 - 平台定位：macOS beta，Windows/Linux 逻辑保持上游行为。
+
 - 测试环境：macOS 版 Typora，页面入口为 `Typora.app/Contents/Resources/TypeMark/index.html`。
+
 - 已验证能力：核心插件系统、配置读取写入、标签页、命令面板、右键菜单、偏好设置、markdownlint、公共弹窗/表格/表单组件、基础文件 RPC、buffered 命令执行。
+
 - 仍属 beta：不是完整 Node/Electron 模拟层，少数依赖深度 Node 能力或 Electron 专有能力的插件可能还需要逐项适配。
 
 ## 移植路线
@@ -83,6 +86,33 @@ Typora 更新后如果插件消失，重新运行：
 
 因为 Typora 更新可能覆盖 `TypeMark/index.html`，需要重新补一条 loader 注入。
 
+## 额外监听服务和内存占用
+
+macOS beta 运行时只会额外启动一个本地 helper：
+
+- 服务名：`io.github.obgnail.typora-plugin-helper`
+- 启动方式：用户级 LaunchAgent，plist 位于
+  `~/Library/LaunchAgents/io.github.obgnail.typora-plugin-helper.plist`
+- 进程形态：`node .../plugin/macos/helper/server.js`
+- 监听地址：只绑定 `127.0.0.1:<random-port>`，端口由安装脚本随机分配
+- 连接文件：
+  `~/Library/Application Support/abnerworks.Typora/plugins/typora_plugin/plugin/macos/helper/connection.json`
+- 认证方式：浏览器侧 RPC 请求必须携带连接文件里的 Bearer token
+
+`entry.bundle.js`、`loader.js`、`shared-shims.js` 都运行在 Typora 的 WebKit 页面里，不会单独启动 HTTP
+dev server、webpack dev server 或固定端口服务。`npm run build:macos` 只在构建时运行，正常使用 Typora
+时不需要常驻。
+
+2026-06-05 20:59 +0800 在本机活动监视器/`top` 口径抽样：
+
+| 项目 | 进程 | 监听 | 内存 |
+| --- | --- | --- | --- |
+| macOS helper | `node .../plugin/macos/helper/server.js` | `127.0.0.1:53993` | 约 `31 MB` |
+| Typora 主进程 | `/Applications/Typora.app/Contents/MacOS/Typora` | 无新增监听 | 约 `85-109 MB` RSS，随文档和窗口状态波动 |
+
+同一时间命令行 `ps` 的 RSS 口径显示 helper 约 `8.6 MB`；活动监视器/top 的 `MEM` 口径更接近日常看到的
+进程内存数字。端口每次安装可能不同，以 `connection.json` 或 `lsof -nP -iTCP -sTCP:LISTEN` 为准。
+
 ## 做了哪些改动
 
 ### 安装与启动
@@ -102,7 +132,7 @@ Typora 更新后如果插件消失，重新运行：
 ### helper 与安全边界
 
 - 新增 `plugin/macos/helper/server.js`。
-- helper 通过 LaunchAgent 启动，只绑定 `127.0.0.1`。
+- helper 是 macOS beta 唯一新增的常驻监听服务，通过 LaunchAgent 启动，只绑定 `127.0.0.1`。
 - 端口随机，连接信息写入用户插件目录，权限为 `600`。
 - RPC 必须携带 Bearer token。
 - 路径访问使用 `realpath` 和路径边界校验，避免前缀穿透和符号链接越界。

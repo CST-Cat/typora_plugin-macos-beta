@@ -76,6 +76,38 @@ class GalleryManager {
     this.config = config
   }
 
+  _isMacosWebKit = () => typeof window !== "undefined" && !!window.__TP_MACOS__
+
+  _splitLocalSrc = src => {
+    const queryIdx = src.indexOf("?")
+    const hashIdx = src.indexOf("#")
+    const idx = [queryIdx, hashIdx].filter(idx => idx >= 0).sort((a, b) => a - b)[0]
+    return idx == null ? [src, ""] : [src.slice(0, idx), src.slice(idx)]
+  }
+
+  _toFileUrl = file => `file://${String(file).split("/").map(encodeURIComponent).join("/")}`
+
+  _resolveSrc = src => {
+    if (!src || !this._isMacosWebKit()) return src
+    if (/^(?:https?|ftp|data|blob|chrome-blob|moz-blob|file|typora):/i.test(src)) return src
+    if (/^[a-z][a-z\d+.-]*:/i.test(src)) return src
+
+    const [pathname, suffix] = this._splitLocalSrc(src)
+    const base = this.utils.getFilePath() ? this.utils.getCurrentDirPath() : this.utils.getMountFolder()
+    if (!base || !pathname) return src
+
+    let decoded = pathname
+    try {
+      decoded = decodeURI(pathname)
+    } catch {}
+    return this._toFileUrl(this.utils.Package.Path.resolve(base, decoded)) + suffix
+  }
+
+  _getImageSrc = img => {
+    const src = img?.getAttribute("src") || img?.currentSrc || img?.src || ""
+    return this._resolveSrc(src)
+  }
+
   _collectImage = () => {
     const images = [...this.utils.entities.querySelectorAllInWrite("img")]
     return this.config.SKIP_BROKEN_IMAGES ? images.filter(this.utils.isImgEmbed) : images
@@ -102,6 +134,14 @@ class GalleryManager {
   }
 
   _createImageMsgGetter = images => {
+    const imageInfos = images.map((img, idx) => ({
+      img,
+      idx,
+      src: this._getImageSrc(img),
+      alt: img?.getAttribute("alt") ?? "",
+      naturalWidth: img?.naturalWidth ?? 0,
+      naturalHeight: img?.naturalHeight ?? 0,
+    }))
     let idx = -1
     const maxIdx = images.length - 1
     return (next = true) => {
@@ -109,17 +149,12 @@ class GalleryManager {
       if (idx > maxIdx) idx = 0
       else if (idx < 0) idx = maxIdx
 
-      const img = images[idx]
+      const info = imageInfos[idx] || {}
       return {
-        img,
-        idx,
+        ...info,
         showIdx: images.length === 0 ? 0 : idx + 1,
-        src: img?.getAttribute("src") ?? "",
-        alt: img?.getAttribute("alt") ?? "",
-        naturalWidth: img?.naturalWidth ?? 0,
-        naturalHeight: img?.naturalHeight ?? 0,
         total: images.length,
-        all: images,
+        all: imageInfos,
       }
     }
   }
@@ -237,6 +272,10 @@ class ImageViewerPlugin extends BasePlugin {
   operations = null
   gallery = null
   dispatcher = null
+  eventBlocker = null
+  viewerEventSink = null
+  blockedChromeStyles = null
+  modalEventTypes = ["pointerdown", "pointerup", "mousedown", "mouseup", "click", "dblclick", "auxclick", "contextmenu", "touchstart", "touchend"]
 
   static OP_ICONS = {
     dummy: "", info: "fa fa-info-circle", thumbnailNav: "fa fa-caret-square-o-down",
@@ -259,8 +298,10 @@ class ImageViewerPlugin extends BasePlugin {
   style = () => ({
     imageMaxWidth: this.config.IMAGE_MAX_WIDTH + "%",
     imageMaxHeight: this.config.IMAGE_MAX_HEIGHT + "%",
-    toolPosition: this.config.TOOL_POSITION === "top" ? "initial" : 0,
-    thumbnailPosition: this.config.TOOL_POSITION === "top" ? "bottom" : "top",
+    toolTop: this.config.TOOL_POSITION === "top" ? "var(--viewer-macos-titlebar-bottom, 0px)" : "initial",
+    toolBottom: this.config.TOOL_POSITION === "top" ? "initial" : 0,
+    thumbnailTop: this.config.TOOL_POSITION === "top" ? "initial" : "var(--viewer-macos-titlebar-bottom, 0px)",
+    thumbnailBottom: this.config.TOOL_POSITION === "top" ? 0 : "initial",
     blurLevel: this.config.BLUR_LEVEL + "px",
   })
 
@@ -356,6 +397,7 @@ class ImageViewerPlugin extends BasePlugin {
 
   process = () => {
     this._handleImageInteraction()
+    this._installViewerEventSink()
 
     this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.toggleSettingPage, hide => hide && this.close())
 
@@ -401,6 +443,105 @@ class ImageViewerPlugin extends BasePlugin {
       if (target) target.scrollLeft += ev.deltaY * 0.5
       ev.stopPropagation()
     }, { passive: true })
+  }
+
+  _installViewerEventSink = () => {
+    this.viewerEventSink = ev => {
+      ev.stopPropagation()
+    }
+    this.modalEventTypes.forEach(type => {
+      this.entities.viewer.addEventListener(type, this.viewerEventSink)
+    })
+  }
+
+  _startEventBlocker = () => {
+    if (this.eventBlocker) return
+    this.eventBlocker = ev => {
+      if (this.utils.isHidden(this.entities.viewer)) return
+      if (this.entities.viewer.contains(ev.target)) return
+      ev.preventDefault()
+      ev.stopImmediatePropagation()
+    }
+    this.modalEventTypes.forEach(type => {
+      window.addEventListener(type, this.eventBlocker, true)
+      document.addEventListener(type, this.eventBlocker, true)
+    })
+  }
+
+  _stopEventBlocker = () => {
+    if (!this.eventBlocker) return
+    this.modalEventTypes.forEach(type => {
+      window.removeEventListener(type, this.eventBlocker, true)
+      document.removeEventListener(type, this.eventBlocker, true)
+    })
+    this.eventBlocker = null
+  }
+
+  _isMacosWebKit = () => typeof window !== "undefined" && !!window.__TP_MACOS__
+
+  _getMacosTitlebarBottom = () => {
+    const titleText = document.getElementById("title-text")
+    const candidates = [
+      document.getElementById("top-titlebar"),
+      document.querySelector("header"),
+      titleText?.closest("#top-titlebar"),
+      titleText?.parentElement,
+    ].filter(Boolean)
+    const bottoms = candidates
+      .map(el => {
+        const style = window.getComputedStyle(el)
+        if (style.display === "none" || style.visibility === "hidden") return 0
+        const rect = el.getBoundingClientRect()
+        return rect.width > 0 && rect.height > 0 ? rect.top + rect.height : 0
+      })
+      .filter(bottom => bottom > 0 && bottom < 120)
+    return Math.ceil(Math.max(40, ...bottoms))
+  }
+
+  _setModalActive = active => {
+    document.body.classList.toggle("plugin-image-viewer-active", active)
+    document.documentElement.classList.toggle("plugin-image-viewer-active", active)
+    if (!active) {
+      this.entities.viewer.style.removeProperty("--viewer-macos-titlebar-bottom")
+      return
+    }
+    const safeTop = this._isMacosWebKit() ? this._getMacosTitlebarBottom() : 0
+    this.entities.viewer.style.setProperty("--viewer-macos-titlebar-bottom", `${safeTop}px`)
+  }
+
+  _blockTyporaChrome = () => {
+    if (!this._isMacosWebKit()) return
+    this._restoreTyporaChrome()
+    const selectors = [
+      "#top-titlebar",
+      "#title-text",
+      "header",
+      "footer",
+      "#footer-word-count-label",
+      ".ty-footer",
+    ]
+    const elements = [...new Set(selectors.flatMap(selector => [...document.querySelectorAll(selector)]))]
+    this.blockedChromeStyles = elements.map(el => ({
+      el,
+      pointerEvents: el.style.pointerEvents,
+      userSelect: el.style.userSelect,
+      webkitUserSelect: el.style.webkitUserSelect,
+    }))
+    elements.forEach(el => {
+      el.style.pointerEvents = "none"
+      el.style.userSelect = "none"
+      el.style.webkitUserSelect = "none"
+    })
+  }
+
+  _restoreTyporaChrome = () => {
+    if (!this.blockedChromeStyles) return
+    this.blockedChromeStyles.forEach(({ el, pointerEvents, userSelect, webkitUserSelect }) => {
+      el.style.pointerEvents = pointerEvents
+      el.style.userSelect = userSelect
+      el.style.webkitUserSelect = webkitUserSelect
+    })
+    this.blockedChromeStyles = null
   }
 
   _handleImageInteraction = () => {
@@ -513,10 +654,12 @@ class ImageViewerPlugin extends BasePlugin {
     }
   }
 
+  _getViewerSrc = item => item?.src || item?.getAttribute?.("src") || item?.currentSrc || item?.src || ""
+
   initThumbnailNav = (current = {}) => {
     const { idx: targetIdx, all = [] } = current
     this.entities.nav.innerHTML = all
-      .map((img, idx) => `<img class="viewer-thumbnail ${idx === targetIdx ? "select" : ""}" src="${img.src}" alt="${img.alt}" data-idx="${idx}">`)
+      .map((item, idx) => `<img class="viewer-thumbnail ${idx === targetIdx ? "select" : ""}" src="${this._getViewerSrc(item)}" alt="${item.alt}" data-idx="${idx}">`)
       .join("")
   }
 
@@ -563,6 +706,15 @@ class ImageViewerPlugin extends BasePlugin {
 
   setPlayButtonState = (isActive) => this.entities.ops.querySelector(`[option="play"]`)?.classList.toggle("active", isActive)
 
+  _fileUrlToPath = src => {
+    if (!/^file:\/\//i.test(src)) return src
+    try {
+      return decodeURIComponent(new URL(src).pathname)
+    } catch {
+      return src.replace(/^file:\/\//i, "")
+    }
+  }
+
   location = () => {
     let src = this.entities.image.getAttribute("src")
     if (this.utils.isNetworkImage(src)) {
@@ -571,6 +723,7 @@ class ImageViewerPlugin extends BasePlugin {
       alert("This Image Cannot Locate")
     } else {
       src = decodeURI(window.removeLastModifyQuery(src))
+      src = this._fileUrlToPath(src)
       if (src) this.utils.showInFinder(src)
     }
   }
@@ -603,6 +756,9 @@ class ImageViewerPlugin extends BasePlugin {
   show = () => {
     document.activeElement.blur()
     this.handleHotkey(false)
+    this._setModalActive(true)
+    this._blockTyporaChrome()
+    this._startEventBlocker()
     this.utils.show(this.entities.viewer)
     const currentInfo = this.gallery.initImageMsgGetter()
     this.initThumbnailNav(currentInfo)
@@ -611,6 +767,9 @@ class ImageViewerPlugin extends BasePlugin {
 
   close = () => {
     this.handleHotkey(true)
+    this._stopEventBlocker()
+    this._restoreTyporaChrome()
+    this._setModalActive(false)
     this.dispatcher.execute("play", true)
     this.utils.hide(this.entities.viewer)
     this.gallery.imageGetter = null
