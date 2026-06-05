@@ -49,8 +49,18 @@ self.onmessage = async (event) => {
     console.error("[Markdownlint] Error action", action)
     return
   }
-  const result = await fn(payload)
-  if (result) {
-    postMessage({ action, result })
+  try {
+    const result = await fn(payload)
+    if (result !== undefined) {
+      postMessage({ action, result })
+    }
+  } catch (error) {
+    postMessage({
+      action,
+      error: {
+        message: error?.message || String(error),
+        stack: error?.stack || "",
+      },
+    })
   }
 }

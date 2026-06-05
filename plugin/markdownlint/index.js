@@ -3,7 +3,11 @@ const createLinterClient = (workerPath, hooks, contentProvider) => {
   const { onCheck, onFix, onError } = hooks
   const worker = createWorker(workerPath)
   worker.onmessage = event => {
-    const { action, result } = event.data
+    const { action, result, error } = event.data || {}
+    if (error) {
+      onError(error)
+      return
+    }
     const onEvent = (action === ACTION.FIX) ? onFix : onCheck
     onEvent(result)
   }
@@ -14,7 +18,15 @@ const createLinterClient = (workerPath, hooks, contentProvider) => {
       event.lineno != null ? `${event.lineno}:${event.colno || 0}` : "",
     ].filter(Boolean).join("\n"),
   })
-  const send = (action, customPayload) => worker.postMessage({ action, payload: { content: contentProvider(), ...customPayload } })
+  const send = async (action, customPayload = {}) => {
+    try {
+      const needsContent = action === ACTION.CHECK || action === ACTION.FIX
+      const content = needsContent ? await contentProvider() : undefined
+      worker.postMessage({ action, payload: { ...customPayload, content } })
+    } catch (error) {
+      onError({ message: error?.stack || error?.message || String(error) })
+    }
+  }
   return {
     configure: (payload) => send(ACTION.CONFIGURE, payload),
     close: () => send(ACTION.CLOSE),
@@ -102,7 +114,7 @@ class MarkdownlintPlugin extends BasePlugin {
     const client = createLinterClient(
       workerPath,
       { onCheck: this._onCheck, onFix: this._onFix, onError: event => console.error(event.message) },
-      () => this.utils.getCurrentFileContent(),
+      this._getLintContent,
     )
     this.linter = {
       configure: async ({ ruleConfig = this.config.RULE_CONFIG, customRuleFiles = this.config.CUSTOM_RULE_FILES, persistent = false } = {}) => {
@@ -136,8 +148,15 @@ class MarkdownlintPlugin extends BasePlugin {
   process = () => {
     const onLifecycle = () => {
       const { eventHub } = this.utils
-      eventHub.addEventListener(eventHub.eventType.fileEdited, this.utils.debounce(this.linter.check, 500))
-      eventHub.addEventListener(eventHub.eventType.allPluginsHadInjected, () => this.linter.configure())
+      const debouncedCheck = this.utils.debounce(this.linter.check, 500)
+      const delayedCheck = delay => setTimeout(() => this.linter.check(), delay)
+      eventHub.addEventListener(eventHub.eventType.fileEdited, debouncedCheck)
+      eventHub.addEventListener(eventHub.eventType.fileContentLoaded, () => delayedCheck(window.__TP_MACOS__ ? 500 : 0))
+      eventHub.addEventListener(eventHub.eventType.fileOpened, () => delayedCheck(window.__TP_MACOS__ ? 800 : 0))
+      eventHub.addEventListener(eventHub.eventType.allPluginsHadInjected, () => {
+        this.linter.configure()
+        delayedCheck(window.__TP_MACOS__ ? 1000 : 0)
+      })
       eventHub.addEventListener(eventHub.eventType.toggleSettingPage, force => {
         if (force) {
           this.entities.panel.toggle(force)
@@ -377,7 +396,32 @@ class MarkdownlintPlugin extends BasePlugin {
     })
   }
 
+  _getLintContent = async () => {
+    const readCurrent = reader => {
+      try {
+        const content = reader?.()
+        return typeof content === "string" ? content : ""
+      } catch (error) {
+        if (!window.__TP_MACOS__) throw error
+        console.warn("[Markdownlint] Failed to read current editor content", error)
+        return ""
+      }
+    }
+    const editorContent = readCurrent(() => this.utils.getCurrentFileContent())
+    if (editorContent || !window.__TP_MACOS__) return editorContent
+
+    if (typeof File !== "undefined" && typeof File.getContent === "function") {
+      const fileContent = await Promise.resolve(File.getContent()).catch(error => {
+        console.warn("[Markdownlint] Failed to read File.getContent()", error)
+        return ""
+      })
+      if (typeof fileContent === "string") return fileContent
+    }
+    return readCurrent(() => window.getMarkdown?.())
+  }
+
   _onCheck = fixInfos => {
+    fixInfos = Array.isArray(fixInfos) ? fixInfos : []
     this.fixInfos = fixInfos
     this.entities.button?.toggleAttribute("lint-check-failed", !!fixInfos.length)
     if (!this.entities.panel.hidden) {
