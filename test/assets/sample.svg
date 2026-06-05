@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="260" viewBox="0 0 640 260">
+  <rect width="640" height="260" fill="#f7fbff"/>
+  <rect x="28" y="28" width="584" height="204" rx="14" fill="#ffffff" stroke="#2f80ed" stroke-width="3"/>
+  <circle cx="86" cy="92" r="34" fill="#27ae60"/>
+  <path d="M72 92l10 10 20-24" fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="140" y="88" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="#1f2937">Typora Plugin Test Asset</text>
+  <text x="140" y="132" font-family="Arial, sans-serif" font-size="20" fill="#4b5563">image_viewer / no_image / resize_image / resource_manager</text>
+  <text x="140" y="172" font-family="Arial, sans-serif" font-size="18" fill="#6b7280">Local SVG: ./assets/sample.svg</text>
+</svg>
