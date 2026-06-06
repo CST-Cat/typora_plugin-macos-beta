@@ -998,6 +998,13 @@ class utils {
   }
 
   static getRecentFiles = async () => {
+    if (window.__TP_MACOS__?.rpc) {
+      const recent = await window.__TP_MACOS__.rpc("typora.recentFiles").catch(() => null)
+      if (recent?.files?.length || recent?.folders?.length) {
+        return { files: recent.files || [], folders: recent.folders || [] }
+      }
+    }
+
     const recent = await JSBridge.invoke("setting.getRecentFiles")
     const ret = typeof recent === "string" ? JSON.parse(recent || "{}") : (recent || {})
     const { files = [], folders = [] } = ret

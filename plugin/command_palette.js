@@ -1,4 +1,58 @@
-const buildProviders = (utils, context) => [
+const PROVIDER_TIMEOUT = 2500
+const RECENT_FILES_LIMIT = 120
+
+const resolveWithTimeout = (producer, fallback, label, timeout = PROVIDER_TIMEOUT) => new Promise(resolve => {
+  let done = false
+  const timer = setTimeout(() => {
+    if (done) return
+    done = true
+    console.warn(`[Command Palette] ${label} timed out`)
+    resolve(fallback)
+  }, timeout)
+
+  Promise.resolve()
+    .then(producer)
+    .then(
+      result => {
+        if (done) return
+        done = true
+        clearTimeout(timer)
+        resolve(result)
+      },
+      error => {
+        if (done) return
+        done = true
+        clearTimeout(timer)
+        console.error(`[Command Palette] ${label} failed:`, error)
+        resolve(fallback)
+      },
+    )
+})
+
+const makeFileItem = (utils, file, isFolder = false) => {
+  if (!file) return null
+  return {
+    title: file,
+    action: () => isFolder ? utils.openFolder(file) : utils.openFile(file),
+  }
+}
+
+const uniqueItems = (items) => {
+  const seen = new Set()
+  return items.filter(item => {
+    if (!item?.title || seen.has(item.title)) return false
+    seen.add(item.title)
+    return true
+  })
+}
+
+const buildProviders = (utils, context) => {
+  const t = (key, fallback, variables) => {
+    const translated = context.t?.(key, variables)
+    return translated && translated !== key ? translated : fallback
+  }
+
+  return [
   {
     prefix: "",
     name: "Tabs",
@@ -11,16 +65,22 @@ const buildProviders = (utils, context) => [
     prefix: "#",
     name: "Recent Files",
     fetch: async () => {
-      if (!File.isNode) return []
-      const { files, folders } = await utils.getRecentFiles()
+      const { files, folders } = await resolveWithTimeout(
+        () => utils.getRecentFiles(),
+        { files: [], folders: [] },
+        "Recent files provider",
+        3500,
+      )
       const current = utils.getFilePath()
       const mapEntity = (isFolder) => (ent) => {
         if (!ent.path || ent.path === current) return null
-        return { title: ent.path, action: () => isFolder ? utils.openFolder(ent.path) : utils.openFile(ent.path) }
+        return makeFileItem(utils, ent.path, isFolder)
       }
       const folderEnts = (folders || []).map(mapEntity(true))
       const fileEnts = (files || []).map(mapEntity(false))
-      return [...folderEnts, ...fileEnts].filter(Boolean)
+      return uniqueItems([...folderEnts, ...fileEnts].filter(Boolean))
+        .filter(item => item.title !== current)
+        .slice(0, RECENT_FILES_LIMIT)
     },
   },
   {
@@ -30,16 +90,21 @@ const buildProviders = (utils, context) => [
       const anchor = context.getAnchor()
       const plugins = Object.entries(utils.getAllBasePlugins()).filter(([_, p]) => p.call)
       return plugins.flatMap(([fixedName, plugin]) => {
-        const staticActions = plugin.staticActions || []
-        const dynamicActions = utils.updatePluginDynamicActions(fixedName, anchor, true) || []
-        const actions = [...staticActions, ...dynamicActions].filter(act => !act.act_disabled && !act.act_hidden)
-        if (actions.length === 0) {
-          return [{ title: `${plugin.pluginName} ( ${fixedName} )`, action: () => utils.updateAndCallPluginDynamicAction(fixedName, undefined, anchor) }]
+        try {
+          const staticActions = plugin.staticActions || []
+          const dynamicActions = utils.updatePluginDynamicActions(fixedName, anchor, true) || []
+          const actions = [...staticActions, ...dynamicActions].filter(act => !act.act_disabled && !act.act_hidden)
+          if (actions.length === 0) {
+            return [{ title: `${plugin.pluginName} ( ${fixedName} )`, action: () => utils.updateAndCallPluginDynamicAction(fixedName, undefined, anchor) }]
+          }
+          return actions.map(act => ({
+            title: `${plugin.pluginName} - ${act.act_name} ( ${fixedName} - ${act.act_value} )`,
+            action: () => utils.updateAndCallPluginDynamicAction(fixedName, act.act_value, anchor),
+          }))
+        } catch (error) {
+          console.error(`[Command Palette] Plugin provider failed for ${fixedName}:`, error)
+          return []
         }
-        return actions.map(act => ({
-          title: `${plugin.pluginName} - ${act.act_name} ( ${fixedName} - ${act.act_value} )`,
-          action: () => utils.updateAndCallPluginDynamicAction(fixedName, act.act_value, anchor),
-        }))
       })
     },
   },
@@ -55,25 +120,34 @@ const buildProviders = (utils, context) => [
         File.editor.library.toggleSidebar()
         if (File.isNode) ClientCommand.refreshViewMenu()
       }
-      const { all: allThemes } = await JSBridge.invoke("setting.getThemes")
+      const themes = await resolveWithTimeout(
+        () => JSBridge.invoke("setting.getThemes"),
+        { all: [] },
+        "Theme provider",
+        500,
+      )
+      const allThemes = Array.isArray(themes?.all) ? themes.all : []
       return [
-        { title: "Open in Explorer", action: () => utils.showInFinder(utils.getFilePath()) },
-        { title: "Open File In New Window", action: () => File.editor.library.openFileInNewWindow(utils.getFilePath(), false) },
-        { title: "Copy File Path", action: () => File.editor.UserOp.setClipboard(null, null, utils.getFilePath()) },
-        { title: "Toggle Preference Panel", action: () => File.megaMenu.togglePreferencePanel() },
-        { title: "Toggle Pin Window", action: () => ClientCommand[document.body.classList.contains("always-on-top") ? "unpinWindow" : "pinWindow"]() },
-        { title: "Open Setting Folder", action: () => utils.settings.openFolder() },
-        { title: "Print", action: () => ClientCommand.print() },
-        { title: "Export: HTML", action: () => doExport("html") },
-        { title: "Export: HTML-plain", action: () => doExport("html-plain") },
-        { title: "Export: Image", action: () => doExport("image") },
-        { title: "Export: PDF", action: () => doExport("pdf") },
-        { title: "Mode: Outline View", action: outlineView },
-        { title: "Mode: Source Code", action: () => File.toggleSourceMode() },
-        { title: "Mode: Focus", action: () => File.editor.toggleFocusMode() },
-        { title: "Mode: Typewriter", action: () => File.editor.toggleTypeWriterMode() },
-        { title: "Mode: Debug", action: () => JSBridge.invoke("window.toggleDevTools") },
-        ...allThemes.map(theme => ({ title: `Theme: ${theme.replace(/\.css$/gi, "")}`, action: () => ClientCommand.setTheme(theme) })),
+        { title: t("command.showInFinder", "Show in Finder"), action: () => utils.showInFinder(utils.getFilePath()) },
+        { title: t("command.openFileInNewWindow", "Open File In New Window"), action: () => File.editor.library.openFileInNewWindow(utils.getFilePath(), false) },
+        { title: t("command.copyFilePath", "Copy File Path"), action: () => File.editor.UserOp.setClipboard(null, null, utils.getFilePath()) },
+        { title: t("command.togglePreferencePanel", "Toggle Preference Panel"), action: () => File.megaMenu.togglePreferencePanel() },
+        { title: t("command.togglePinWindow", "Toggle Pin Window"), action: () => ClientCommand[document.body.classList.contains("always-on-top") ? "unpinWindow" : "pinWindow"]() },
+        { title: t("command.openSettingFolder", "Open Setting Folder"), action: () => utils.settings.openFolder() },
+        { title: t("command.print", "Print"), action: () => ClientCommand.print() },
+        { title: t("command.exportHtml", "Export: HTML"), action: () => doExport("html") },
+        { title: t("command.exportHtmlPlain", "Export: HTML-plain"), action: () => doExport("html-plain") },
+        { title: t("command.exportImage", "Export: Image"), action: () => doExport("image") },
+        { title: t("command.exportPdf", "Export: PDF"), action: () => doExport("pdf") },
+        { title: t("command.modeOutlineView", "Mode: Outline View"), action: outlineView },
+        { title: t("command.modeSourceCode", "Mode: Source Code"), action: () => File.toggleSourceMode() },
+        { title: t("command.modeFocus", "Mode: Focus"), action: () => File.editor.toggleFocusMode() },
+        { title: t("command.modeTypewriter", "Mode: Typewriter"), action: () => File.editor.toggleTypeWriterMode() },
+        { title: t("command.modeDebug", "Mode: Debug"), action: () => JSBridge.invoke("window.toggleDevTools") },
+        ...allThemes.map(theme => {
+          const themeName = theme.replace(/\.css$/gi, "")
+          return { title: t("command.theme", `Theme: ${themeName}`, { theme: themeName }), action: () => ClientCommand.setTheme(theme) }
+        }),
       ]
     },
   },
@@ -97,19 +171,19 @@ const buildProviders = (utils, context) => [
   },
   {
     prefix: ":",
-    name: "Go to Line",
+    name: t("provider.goToLine", "Go to Line"),
     dynamic: true,
     fetch: async (query) => {
       const line = parseInt(query, 10)
       if (isNaN(line) || line <= 0) {
-        return [{ title: "Type a line number to navigate", action: () => undefined }]
+        return [{ title: t("line.prompt", "Type a line number to navigate"), action: () => undefined }]
       }
       const jump = () => {
         if (!File.editor.sourceView.inSourceMode) File.toggleSourceMode()
         utils.scrollSourceView(line)
       }
       return [{
-        title: `Go to line ${line}`,
+        title: t("line.go", `Go to line ${line}`, { line }),
         action: jump,
         // preview: jump,
       }]
@@ -120,12 +194,12 @@ const buildProviders = (utils, context) => [
     name: "Help",
     fetch: async () => {
       const helps = [
-        { title: "> Show and Run Commands", prefix: ">" },
-        { title: "@ Go to Symbol in Editor", prefix: "@" },
-        { title: "# Search Recent Files", prefix: "#" },
-        { title: ": Go to Line", prefix: ":" },
-        { title: "? Help", prefix: "?" },
-        { title: "Search Open Tabs", prefix: "" },
+        { title: t("help.showCommands", "> Show and Run Commands"), prefix: ">" },
+        { title: t("help.goToSymbol", "@ Go to Symbol in Editor"), prefix: "@" },
+        { title: t("help.searchRecentFiles", "# Search Recent Files"), prefix: "#" },
+        { title: t("help.goToLine", ": Go to Line"), prefix: ":" },
+        { title: t("help.help", "? Help"), prefix: "?" },
+        { title: t("help.searchOpenTabs", "Search Open Tabs"), prefix: "" },
       ]
       return helps.map(h => ({
         title: h.title,
@@ -136,7 +210,8 @@ const buildProviders = (utils, context) => [
       }))
     },
   },
-]
+  ]
+}
 
 class Store {
   listeners = new Set()
@@ -191,7 +266,9 @@ class Service {
 
   async fetchItems(prefix, query, keywords) {
     const activeProviders = this.providers.filter(p => p.prefix === prefix)
-    const results = await Promise.all(activeProviders.map(p => p.fetch(query, keywords)))
+    const results = await Promise.all(activeProviders.map(p => (
+      resolveWithTimeout(() => p.fetch(query, keywords), [], `${p.name || p.prefix || "default"} provider`)
+    )))
 
     return activeProviders.flatMap((p, index) => {
       const providerItems = results[index]
@@ -270,7 +347,7 @@ class CommandPalettePlugin extends BasePlugin {
   html = () =>
     `<div class="plugin-command-palette-overlay plugin-common-hidden">
       <div class="plugin-command-palette-panel">
-        <input id="plugin-command-palette-input" type="text" placeholder="Type ? to see available commands">
+        <input id="plugin-command-palette-input" type="text" placeholder="${this.utils.escape(this.i18n.t("placeholder"))}">
         <div class="plugin-command-palette-results"></div>
       </div>
     </div>`
@@ -287,6 +364,7 @@ class CommandPalettePlugin extends BasePlugin {
     const providers = buildProviders(this.utils, {
       getAnchor: () => this.anchorNode,
       setInput: (input) => this.setInput(input),
+      t: (key, variables) => this.i18n.t(key, variables),
     })
     this.store = new Store()
     this.service = new Service(providers)
@@ -356,7 +434,7 @@ class CommandPalettePlugin extends BasePlugin {
   doSearch = async (rawInput) => {
     const currentSessionId = this.store.get().sessionId + 1
     const { prefix, query, keywords } = this.service.resolveInput(rawInput)
-    this.store.set({ query: rawInput, keywords, loading: true, sessionId: currentSessionId })
+    this.store.set({ query: rawInput, keywords, items: [], activeIndex: 0, loading: true, sessionId: currentSessionId })
     try {
       const items = await this.service.fetchItems(prefix, query, keywords)
       if (this.store.get().sessionId !== currentSessionId) return

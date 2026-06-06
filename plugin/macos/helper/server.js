@@ -83,6 +83,111 @@ function execBuffered(command, args = [], options = {}) {
   })
 }
 
+const isMarkdownPath = file => /\.(md|markdown|mdown|mkd)$/i.test(file || "")
+
+async function collectRecentPathEntries(paths, safePath) {
+  const files = []
+  const folders = []
+  const seen = new Set()
+  for (const item of paths) {
+    if (!item || seen.has(item)) continue
+    seen.add(item)
+    try {
+      const file = await safePath(item)
+      const stat = await fsp.stat(file)
+      if (stat.isDirectory()) {
+        folders.push({ path: file })
+      } else if (stat.isFile() && isMarkdownPath(file)) {
+        files.push({ path: file })
+      }
+    } catch {}
+  }
+  return { files, folders }
+}
+
+async function readTyporaRecentFolders(safePath) {
+  const prefsPath = path.join(os.homedir(), "Library/Preferences/abnerworks.Typora.plist")
+  const result = await execBuffered("/usr/bin/plutil", ["-extract", "recentFolder", "json", "-o", "-", prefsPath], { timeout: 3000 })
+  if (!result.ok || !result.stdout.trim()) return []
+
+  let folders
+  try {
+    folders = JSON.parse(result.stdout)
+  } catch {
+    return []
+  }
+
+  const validFolders = []
+  for (const item of folders) {
+    try {
+      const folder = await safePath(item)
+      const stat = await fsp.stat(folder)
+      if (stat.isDirectory()) validFolders.push(folder)
+    } catch {}
+  }
+  return validFolders
+}
+
+async function readSpotlightRecentMarkdownFiles(safePath) {
+  const query = 'kMDItemLastUsedDate == * && (kMDItemFSName == "*.md" || kMDItemFSName == "*.markdown" || kMDItemFSName == "*.mdown" || kMDItemFSName == "*.mkd")'
+  const result = await execBuffered("/usr/bin/mdfind", [query], { timeout: 3000 })
+  if (!result.ok) return { files: [], folders: [] }
+  const recentFolders = await readTyporaRecentFolders(safePath)
+  const paths = result.stdout
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .filter(file => recentFolders.length === 0 || recentFolders.some(folder => isInside(path.resolve(file), folder)))
+    .slice(0, 120)
+  return await collectRecentPathEntries(paths, safePath)
+}
+
+async function readMacosTyporaRecentFiles(safePath) {
+  const sflPath = path.join(
+    os.homedir(),
+    "Library/Application Support/com.apple.sharedfilelist/com.apple.LSSharedFileList.ApplicationRecentDocuments/abnerworks.typora.sfl4",
+  )
+  const xmlResult = await execBuffered("/usr/bin/plutil", ["-convert", "xml1", "-o", "-", sflPath], { timeout: 3000 })
+  const xml = (xmlResult.stdout || xmlResult.stderr || "").trim()
+  if (!xmlResult.ok || !xml) return await readSpotlightRecentMarkdownFiles(safePath)
+
+  const bookmarks = Array.from(xml.matchAll(/<data>\s*([A-Za-z0-9+/=\s]+?)\s*<\/data>/g))
+    .map(match => match[1].replace(/\s+/g, ""))
+    .filter(data => data.startsWith("Ym9v"))
+
+  if (bookmarks.length === 0) return await readSpotlightRecentMarkdownFiles(safePath)
+
+  const script = `
+ObjC.import('Foundation')
+const bookmarks = ${JSON.stringify(bookmarks)}
+const result = []
+for (const bookmark of bookmarks) {
+  try {
+      const data = $.NSData.alloc.initWithBase64EncodedStringOptions(bookmark, 0)
+      if (!data) continue
+      const stale = Ref()
+      const error = Ref()
+      const url = $.NSURL.URLByResolvingBookmarkDataOptionsRelativeToURLBookmarkDataIsStaleError(data, $.NSURLBookmarkResolutionWithoutUI, undefined, stale, error)
+      if (url && url.path) result.push(ObjC.unwrap(url.path))
+  } catch (error) {
+  }
+}
+console.log(JSON.stringify(result))
+`
+  const { ok, stdout, stderr } = await execBuffered("/usr/bin/osascript", ["-l", "JavaScript", "-e", script], { timeout: 3000 })
+  const output = (stdout || stderr || "").trim()
+  if (!ok || !output) return { files: [], folders: [] }
+
+  let paths
+  try {
+    paths = JSON.parse(output)
+  } catch {
+    return await readSpotlightRecentMarkdownFiles(safePath)
+  }
+
+  const recent = await collectRecentPathEntries(paths, safePath)
+  return recent.files.length || recent.folders.length ? recent : await readSpotlightRecentMarkdownFiles(safePath)
+}
+
 function makeHandlers({ pluginRoot, typeMarkRoot, safePath, rgBinary }) {
   const customRoot = path.join(pluginRoot, "plugin/custom/plugins")
 
@@ -108,6 +213,10 @@ function makeHandlers({ pluginRoot, typeMarkRoot, safePath, rgBinary }) {
       const safeMessage = String(message).slice(0, 4000)
       console.log(`[browser:${safeLevel}:${safeSource}] ${safeMessage}`)
       return { ok: true }
+    },
+
+    "typora.recentFiles": async () => {
+      return await readMacosTyporaRecentFiles(safePath)
     },
 
     "fs.readFile": async ({ path: file, encoding = "utf-8" }) => {
@@ -363,5 +472,6 @@ module.exports = {
   findRgBinary,
   isInside,
   makeHandlers,
+  readMacosTyporaRecentFiles,
   realpathNearest,
 }
