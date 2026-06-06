@@ -354,6 +354,7 @@
     "$option.COMMIT_RUN_DISPLAY.echo": "立即回显输出",
     "$option.COMMIT_RUN_DISPLAY.always": "执行结束后显示输出",
     "$option.BUILTIN.shell.cmd/bash": "CMD/Bash",
+    "$option.BUILTIN.shell.zsh": "Zsh",
     "$option.BUILTIN.shell.powershell": "PowerShell",
     "$option.BUILTIN.shell.gitbash": "Git Bash",
     "$option.BUILTIN.shell.wsl": "WSL",

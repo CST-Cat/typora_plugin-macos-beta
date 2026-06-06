@@ -9,6 +9,10 @@ class BaseShell {
     this.context = context
   }
 
+  quoteShellArg(arg) {
+    return `'${String(arg).replace(/'/g, `'\\''`)}'`
+  }
+
   normalizePath(path) {
     return path
   }
@@ -28,6 +32,10 @@ class BaseShell {
 }
 
 class PosixShell extends BaseShell {
+  quoteNestedCommand(cmd) {
+    return this.context.isWin ? `"${cmd}"` : this.quoteShellArg(cmd)
+  }
+
   normalizePath(path) {
     if (!path || !this.context.isWin) return path
     return path.replace(/\\/g, "/").replace(/^(\w+):/, (_, drive) => `/${drive.toLowerCase()}`)
@@ -44,7 +52,14 @@ class CmdShell extends BaseShell {
 class BashShell extends PosixShell {
   getCommand(cmd) {
     const nestCommand = this.replaceArgs(cmd)
-    return `bash -c "${nestCommand}"`
+    return `bash -c ${this.quoteNestedCommand(nestCommand)}`
+  }
+}
+
+class ZshShell extends PosixShell {
+  getCommand(cmd) {
+    const nestCommand = this.replaceArgs(cmd)
+    return `zsh -lc ${this.quoteNestedCommand(nestCommand)}`
   }
 }
 
@@ -60,7 +75,7 @@ class GitBash extends PosixShell {
   getCommand(cmd) {
     const nestCommand = this.replaceArgs(cmd)
     const prefix = this.context.isWin ? "chcp 65001 | " : ""
-    return `${prefix}bash.exe -c "${nestCommand}"`
+    return `${prefix}bash.exe -c ${this.quoteNestedCommand(nestCommand)}`
   }
 }
 
@@ -76,7 +91,7 @@ class Wsl extends PosixShell {
   getCommand(cmd) {
     const nestCommand = this.replaceArgs(cmd)
     const prefix = this.context.isWin ? "chcp 65001 | " : ""
-    return `${prefix}wsl.exe -e bash -c "${nestCommand}"`
+    return `${prefix}wsl.exe -e bash -c ${this.quoteNestedCommand(nestCommand)}`
   }
 }
 
@@ -118,14 +133,15 @@ class CommandExecutor {
 class CommanderPlugin extends BasePlugin {
   ACT_VALUE_PREFIX = "call_builtin@"
   DISPLAY_TYPE = { ALWAYS: "always", ERROR: "error", SILENT: "silent", ECHO: "echo" }
-  SHELL = { CMD_BASH: "cmd/bash", POWER_SHELL: "powershell", GIT_BASH: "gitbash", WSL: "wsl" }
+  SHELL = { CMD_BASH: "cmd/bash", ZSH: "zsh", POWER_SHELL: "powershell", GIT_BASH: "gitbash", WSL: "wsl" }
+  AVAILABLE_SHELLS = (() => {
+    const { CMD_BASH, ZSH, POWER_SHELL, GIT_BASH, WSL } = this.SHELL
+    if (File.isWin) return new Set([CMD_BASH, POWER_SHELL, GIT_BASH, WSL])
+    if (File.isMac) return new Set([ZSH, CMD_BASH])
+    return new Set([CMD_BASH])
+  })()
   BUILTINS = (() => {
-    const shells = Object.values(this.SHELL)
-    let ret = this.config.BUILTIN.filter(e => !e.disable && e.shell && shells.includes(e.shell))
-    if (!File.isWin) {
-      ret = ret.filter(e => e.shell !== this.SHELL.CMD_BASH)
-    }
-    return ret
+    return this.config.BUILTIN.filter(e => !e.disable && e.shell && this.AVAILABLE_SHELLS.has(e.shell))
   })()
   STRATEGIES = (() => {
     const ctx = {
@@ -136,6 +152,7 @@ class CommanderPlugin extends BasePlugin {
     }
     return {
       [this.SHELL.CMD_BASH]: ctx.isWin ? new CmdShell(ctx) : new BashShell(ctx),
+      [this.SHELL.ZSH]: new ZshShell(ctx),
       [this.SHELL.POWER_SHELL]: new PowerShell(ctx),
       [this.SHELL.GIT_BASH]: new GitBash(ctx),
       [this.SHELL.WSL]: new Wsl(ctx),
@@ -156,9 +173,9 @@ class CommanderPlugin extends BasePlugin {
   style = () => true
 
   html = () => {
-    const { CMD_BASH, POWER_SHELL, GIT_BASH, WSL } = this.SHELL
+    const { CMD_BASH, ZSH, POWER_SHELL, GIT_BASH, WSL } = this.SHELL
     const genShell = (shell, text) => `<option value="${shell}">${text}</option>`
-    const shells = [genShell(CMD_BASH, "CMD/Bash")]
+    const shells = File.isMac ? [genShell(ZSH, "Zsh"), genShell(CMD_BASH, "Bash")] : [genShell(CMD_BASH, "CMD/Bash")]
     if (File.isWin) {
       shells.push(genShell(POWER_SHELL, "PowerShell"), genShell(GIT_BASH, "Git Bash"), genShell(WSL, "WSL"))
     }
@@ -212,6 +229,13 @@ class CommanderPlugin extends BasePlugin {
       const hasCMD = ev.target.value.trim()
       this.utils.toggleInvisible(this.entities.commit, !hasCMD)
       if (!hasCMD) this.entities.selectBuiltin.value = ""
+    })
+    this.entities.input.addEventListener("paste", ev => {
+      const text = ev.clipboardData?.getData("text")
+      if (!text || !/[\r\n]/.test(text)) return
+      ev.preventDefault()
+      const oneLine = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean).join("; ")
+      document.execCommand("insertText", false, oneLine)
     })
     this.entities.form.addEventListener("submit", ev => {
       ev.preventDefault()

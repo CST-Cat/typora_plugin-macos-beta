@@ -149,7 +149,7 @@ describe("Scripts, Actions & File IO", () => {
   it("commander: BUILTIN scripts should have complete definitions and valid shells", () => {
     const setting = getSetting("commander")
     assert.ok(Array.isArray(setting.BUILTIN), "BUILTIN must be an array")
-    const validTypes = ["cmd/bash", "powershell", "gitbash", "wsl"]
+    const validTypes = ["cmd/bash", "zsh", "powershell", "gitbash", "wsl"]
     setting.BUILTIN.forEach((built, index) => {
       assertHasProps(built, ["name", "disable", "shell", "cmd"], `BUILTIN[${index}]`)
       assert.ok(validTypes.includes(built.shell), `BUILTIN[${index}].shell must be one of: ${validTypes.join(", ")}`)

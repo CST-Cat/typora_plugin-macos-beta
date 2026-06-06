@@ -254,7 +254,7 @@ COMMIT_RUN_DISPLAY = "echo"
 # Predefined command list
 #   name   : Unique identifier for the plugin menu
 #   disable: Switch for this specific command
-#   shell  : Target shell (Supported: "cmd/bash", "powershell", "gitbash", "wsl")
+#   shell  : Target shell (Supported: "cmd/bash", "zsh", "powershell", "gitbash", "wsl")
 #   hotkey : (Optional) Execution shortcut
 #   cmd    : Execution string
 # Built-in environment variables:
@@ -263,6 +263,7 @@ COMMIT_RUN_DISPLAY = "echo"
 #   $m: Current mount directory in Typora's sidebar
 BUILTIN = [
   { name = "Default", disable = false, shell = "cmd/bash", cmd = "" },
+  { name = "macOS Terminal", disable = false, shell = "zsh", cmd = "cd $d && open -a Terminal ." },
   { name = "Explorer", disable = false, shell = "powershell", cmd = "explorer $d" },
   { name = "VScode", disable = false, shell = "cmd/bash", cmd = "code $f" },
   { name = "Windows Terminal", disable = false, shell = "cmd/bash", cmd = "cd $d && wt" },
