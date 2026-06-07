@@ -3107,7 +3107,7 @@ TEMPLATE = """
 //   - page: 0-based index to switch pages
 //   See: https://github.com/jgraph/drawio/blob/f7158bfb/src/main/webapp/js/diagramly/GraphViewer.js#L118
 
-graphConfig = {
+{
     source: "https://cdn.jsdelivr.net/gh/obgnail/typora_images@master/image/example.drawio",
     page: 0,
 }"""

@@ -9,6 +9,7 @@ class TabManager {
     this.config = context.config
     this.hooks = {
       onRender: context.onRender,
+      onBeforeSwitch: context.onBeforeSwitch,
       onEmpty: context.onEmpty,
       onExit: context.onExit,
     }
@@ -71,7 +72,7 @@ class TabManager {
       if (this._localOpen && this.current) {
         this.current.path = wantOpenPath
       } else {
-        const newTab = { path: wantOpenPath, scrollTop: 0 }
+        const newTab = { path: wantOpenPath, scrollTop: 0, scrollAnchor: null, scrollRatio: 0 }
         if (NEW_TAB_POSITION === "end") this._tabs.push(newTab)
         else if (NEW_TAB_POSITION === "start") this._tabs.unshift(newTab)
         else if (NEW_TAB_POSITION === "right") this._tabs.splice(this._activeIdx + 1, 0, newTab)
@@ -95,7 +96,11 @@ class TabManager {
   }
 
   switch(idx) {
-    this._activeIdx = Math.min(Math.max(0, idx), this.maxIdx)
+    const nextIdx = Math.min(Math.max(0, idx), this.maxIdx)
+    if (nextIdx !== this._activeIdx) {
+      this.hooks.onBeforeSwitch?.(this.current, this._tabs[nextIdx])
+    }
+    this._activeIdx = nextIdx
     this.utils.openFile(this.current?.path, true)
   }
 
@@ -259,7 +264,12 @@ class TabManager {
     if (matchMountFolder && mountFolder !== currentMountFolder) return
 
     const activePath = saveTabs.find(tab => tab.active)?.path
-    this._tabs = saveTabs.map(({ path, scrollTop }) => ({ path, scrollTop: scrollTop || 0 }))
+    this._tabs = saveTabs.map(({ path, scrollTop, scrollAnchor, scrollRatio }) => ({
+      path,
+      scrollTop: scrollTop || 0,
+      scrollAnchor: scrollAnchor || null,
+      scrollRatio: scrollRatio || 0,
+    }))
 
     this._formatShowNames()
 
@@ -306,6 +316,11 @@ class TabManager {
 class WindowTabPlugin extends BasePlugin {
   checkTabsInterval = null
   renderRafManager = this.utils.getRafManager()
+  _pendingScrollRestorePath = null
+  _activeScrollRestoreToken = null
+  _scrollRestoreTimers = []
+  _scrollRestoreRafs = []
+  _ignoreScrollRecordUntil = 0
   manualSaveStorage = this.utils.getStorage(`${this.fixedName}.manual`)
   autoSaveStorage = this.utils.getStorage(`${this.fixedName}.auto`)
   staticActions = this.i18n.fillActions([
@@ -322,6 +337,11 @@ class WindowTabPlugin extends BasePlugin {
         this._startCheckTabsInterval()
         this._renderTabs(wantOpenPath)
       })
+    },
+    onBeforeSwitch: (currentTab, nextTab) => {
+      this._recordCurrentScrollTop()
+      this._requestScrollRestore(nextTab?.path)
+      this._switchingByTab = true
     },
     onEmpty: async () => {
       this._hideTabBar()
@@ -407,7 +427,19 @@ class WindowTabPlugin extends BasePlugin {
     }
     const handleLifeCycle = () => {
       this._hideTabBar()
-      this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.fileOpened, path => this.tab.open(path))
+      this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.beforeFileOpen, () => {
+        this._cancelScrollRestore()
+        if (this._switchingByTab) {
+          this._switchingByTab = false
+        } else {
+          this._recordCurrentScrollTop()
+        }
+      })
+      this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.fileOpened, path => {
+        const previousPath = this.tab.current?.path
+        this.tab.open(path)
+        if (path && path !== previousPath) this._requestScrollRestore(path)
+      })
       this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.fileContentLoaded, this._scrollContent)
       this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.toggleSettingPage, hide => {
         if (this.entities.windowTab) this.entities.windowTab.style.visibility = hide ? "hidden" : "initial"
@@ -473,11 +505,12 @@ class WindowTabPlugin extends BasePlugin {
       })
     }
     const handleScroll = () => {
-      if (!this.entities.content) return
-      this.entities.content.addEventListener("scroll", this.utils.debounce(() => {
-        const cur = this.tab.current
-        if (cur) cur.scrollTop = this.entities.content.scrollTop
-      }), 100)
+      const scrollEl = this._getScrollElement()
+      if (!scrollEl) return
+      scrollEl.addEventListener("scroll", this.utils.debounce(this._recordCurrentScrollTop, 100), { passive: true })
+      const cancelUserRestore = () => this._cancelPendingScrollRestore()
+      scrollEl.addEventListener("wheel", cancelUserRestore, { passive: true })
+      scrollEl.addEventListener("touchstart", cancelUserRestore, { passive: true })
     }
     const handleDrag = () => {
       const newWindowIfNeed = (offsetY, el) => {
@@ -854,6 +887,147 @@ class WindowTabPlugin extends BasePlugin {
     document.documentElement.style.setProperty("--plugin-window-tab-height", `${tabHeight}px`)
   }
 
+  _getScrollElement = () => this.entities?.content || document.querySelector("content") || document.scrollingElement || document.documentElement
+
+  _getScrollTop = () => this._getScrollElement()?.scrollTop || 0
+
+  _setScrollTop = scrollTop => {
+    const scrollEl = this._getScrollElement()
+    if (!scrollEl) return
+    const maxScrollTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight)
+    scrollEl.scrollTop = Math.min(Math.max(0, scrollTop || 0), maxScrollTop)
+  }
+
+  _getScrollRatio = () => {
+    const scrollEl = this._getScrollElement()
+    if (!scrollEl) return 0
+    const maxScrollTop = scrollEl.scrollHeight - scrollEl.clientHeight
+    return maxScrollTop > 0 ? this._getScrollTop() / maxScrollTop : 0
+  }
+
+  _cancelScrollRestore = () => {
+    for (const timer of this._scrollRestoreTimers) clearTimeout(timer)
+    for (const raf of this._scrollRestoreRafs) cancelAnimationFrame(raf)
+    this._scrollRestoreTimers = []
+    this._scrollRestoreRafs = []
+    this._activeScrollRestoreToken = null
+  }
+
+  _cancelPendingScrollRestore = () => {
+    this._pendingScrollRestorePath = null
+    this._cancelScrollRestore()
+  }
+
+  _requestScrollRestore = filepath => {
+    if (filepath) this._pendingScrollRestorePath = filepath
+  }
+
+  _consumeScrollRestore = filepath => {
+    if (this._pendingScrollRestorePath !== filepath) return false
+    this._pendingScrollRestorePath = null
+    return true
+  }
+
+  _recordCurrentScrollTop = () => {
+    if (typeof performance !== "undefined" && performance.now() < this._ignoreScrollRecordUntil) return
+    const cur = this.tab.current
+    if (!cur) return
+    cur.scrollTop = this._getScrollTop()
+    cur.scrollRatio = this._getScrollRatio()
+    cur.scrollAnchor = this._captureScrollAnchor()
+  }
+
+  _getScrollViewportRect = scrollEl => {
+    if (!scrollEl || scrollEl === document.scrollingElement || scrollEl === document.documentElement || scrollEl === document.body) {
+      return { top: 0, bottom: window.innerHeight }
+    }
+    const rect = scrollEl.getBoundingClientRect()
+    return { top: rect.top, bottom: rect.bottom }
+  }
+
+  _getScrollAnchorRoot = () => this.utils.entities.eWrite || document.querySelector("#write")
+
+  _findAnchorElementByCid = cid => {
+    const root = this._getScrollAnchorRoot()
+    if (!root || !cid) return null
+    return Array.from(root.querySelectorAll("[cid]")).find(el => el.getAttribute("cid") === cid)
+  }
+
+  _captureScrollAnchor = () => {
+    const scrollEl = this._getScrollElement()
+    const root = this._getScrollAnchorRoot()
+    if (!scrollEl || !root) return null
+
+    const viewport = this._getScrollViewportRect(scrollEl)
+    const viewportTop = viewport.top + 4
+    const candidates = Array.from(root.querySelectorAll("[cid]"))
+    const anchor = candidates.find(el => {
+      const rect = el.getBoundingClientRect()
+      return rect.height > 0 && rect.bottom >= viewportTop && rect.top <= viewport.bottom
+    })
+    if (!anchor) return null
+
+    const cid = anchor.getAttribute("cid")
+    if (!cid) return null
+
+    const rect = anchor.getBoundingClientRect()
+    return {
+      cid,
+      offsetTop: Math.round(rect.top - viewport.top),
+    }
+  }
+
+  _restoreTabScrollPosition = tab => {
+    const scrollEl = this._getScrollElement()
+    if (!scrollEl || !tab) return
+
+    const anchor = tab.scrollAnchor
+    const anchorEl = anchor?.cid && this._findAnchorElementByCid(anchor.cid)
+    if (anchorEl) {
+      const viewport = this._getScrollViewportRect(scrollEl)
+      const rect = anchorEl.getBoundingClientRect()
+      this._setScrollTop(this._getScrollTop() + rect.top - viewport.top - (anchor.offsetTop || 0))
+      return
+    }
+
+    if (typeof tab.scrollRatio === "number" && tab.scrollRatio > 0) {
+      const maxScrollTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight)
+      this._setScrollTop(maxScrollTop * tab.scrollRatio)
+      return
+    }
+
+    this._setScrollTop(tab.scrollTop || 0)
+  }
+
+  _scheduleScrollRestore = (filepath, tab) => {
+    this._cancelScrollRestore()
+    const token = Symbol(filepath)
+    this._activeScrollRestoreToken = token
+
+    const applyScroll = () => {
+      if (this._activeScrollRestoreToken !== token || this.utils.getFilePath() !== filepath) return
+      if (typeof performance !== "undefined") this._ignoreScrollRecordUntil = performance.now() + 200
+      this._restoreTabScrollPosition(tab)
+    }
+
+    if (typeof requestAnimationFrame === "function") {
+      const raf = requestAnimationFrame(() => {
+        const secondRaf = requestAnimationFrame(applyScroll)
+        this._scrollRestoreRafs.push(secondRaf)
+      })
+      this._scrollRestoreRafs.push(raf)
+    } else {
+      applyScroll()
+    }
+
+    for (const delay of [80, 250, 600]) {
+      this._scrollRestoreTimers.push(setTimeout(applyScroll, delay))
+    }
+    this._scrollRestoreTimers.push(setTimeout(() => {
+      if (this._activeScrollRestoreToken === token) this._activeScrollRestoreToken = null
+    }, 700))
+  }
+
   getDynamicActions = () => this.i18n.fillActions([
     { act_value: "open_save_tabs", act_hidden: !this.manualSaveStorage.exist() },
     { act_value: "toggle_file_ext", act_state: this.config.TRIM_FILE_EXT },
@@ -952,39 +1126,8 @@ class WindowTabPlugin extends BasePlugin {
   _scrollContent = filepath => {
     const activeTab = this.tab.tabs.find(e => e.path === filepath)
     if (!activeTab) return
-
-    const targetScrollTop = activeTab.scrollTop
-    const contentEl = this.entities.content
-
-    if (this._contentObserver) {
-      this._contentObserver.disconnect()
-      clearTimeout(this._scrollFallbackTimer)
-    }
-
-    const finalizeScroll = () => {
-      if (this._contentObserver) {
-        this._contentObserver.disconnect()
-        this._contentObserver = null
-      }
-      if (this.utils.getFilePath() === filepath) {
-        contentEl.scrollTop = targetScrollTop
-      }
-    }
-
-    this._scrollFallbackTimer = setTimeout(finalizeScroll, 2000)
-    const debouncedFinalize = this.utils.debounce(() => {
-      clearTimeout(this._scrollFallbackTimer)
-      finalizeScroll()
-    }, 100)
-
-    this._contentObserver = new ResizeObserver(() => {
-      if (this.utils.getFilePath() !== filepath) {
-        this._contentObserver.disconnect()
-        return
-      }
-      debouncedFinalize()
-    })
-    this._contentObserver.observe(contentEl.firstElementChild || contentEl)
+    if (!this._consumeScrollRestore(filepath)) return
+    this._scheduleScrollRestore(filepath, activeTab)
   }
 
   _renderTabs = wantOpenPath => {
@@ -1036,15 +1179,22 @@ class WindowTabPlugin extends BasePlugin {
   showInFinder = idx => this.utils.showInFinder(this.tab.getTabPathByIdx(idx))
   openInNewWindow = idx => this.openFileNewWindow(this.tab.getTabPathByIdx(idx), false)
 
-  saveTabs = (storage) => storage.set({
-    mount_folder: this.utils.getMountFolder(),
-    save_tabs: this.tab.tabs.map((tab, idx) => ({
-      idx, path: tab.path, scrollTop: tab.scrollTop, active: idx === this.tab.activeIdx,
-    })),
-  })
+  saveTabs = (storage) => {
+    this._recordCurrentScrollTop()
+    storage.set({
+      mount_folder: this.utils.getMountFolder(),
+      save_tabs: this.tab.tabs.map((tab, idx) => ({
+        idx, path: tab.path, scrollTop: tab.scrollTop, active: idx === this.tab.activeIdx,
+        scrollAnchor: tab.scrollAnchor || null,
+        scrollRatio: tab.scrollRatio || 0,
+      })),
+    })
+  }
 
   openSaveTabs = (storage, matchMountFolder = false) => {
     const { save_tabs, mount_folder } = storage.get() || {}
+    const activePath = save_tabs?.find(tab => tab.active)?.path || save_tabs?.[0]?.path
+    this._requestScrollRestore(activePath)
     this.tab.restoreSession(save_tabs, mount_folder, this.utils.getMountFolder(), matchMountFolder)
   }
 }

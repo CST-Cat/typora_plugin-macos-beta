@@ -735,6 +735,34 @@ describe("Function, Timing & Flow Control Utilities", () => {
       assert.strictEqual(result1, 42)
       assert.strictEqual(result2, 42)
     })
+
+    it("retries after sync errors", () => {
+      let count = 0
+      const onceFn = utils.once(() => {
+        count++
+        if (count === 1) throw new Error("first failure")
+        return 42
+      })
+
+      assert.throws(() => onceFn(), /first failure/)
+      assert.strictEqual(onceFn(), 42)
+      assert.strictEqual(onceFn(), 42)
+      assert.strictEqual(count, 2)
+    })
+
+    it("retries after async errors", async () => {
+      let count = 0
+      const onceFn = utils.once(async () => {
+        count++
+        if (count === 1) throw new Error("first failure")
+        return 42
+      })
+
+      await assert.rejects(() => onceFn(), /first failure/)
+      assert.strictEqual(await onceFn(), 42)
+      assert.strictEqual(await onceFn(), 42)
+      assert.strictEqual(count, 2)
+    })
   })
 
   describe("utils.memorize", () => {

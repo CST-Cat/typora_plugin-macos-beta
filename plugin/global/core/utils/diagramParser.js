@@ -6,6 +6,7 @@ class DiagramParser {
   parsers = new Map()     // map[lang]parser
   langMapping = new Map() // map[lang]mappingLang
   scheduled = new Set()   // cid
+  failedRenderCache = new Map() // map[cid]{lang, content}
   timeout = 300
 
   constructor(utils, i18n) {
@@ -135,7 +136,10 @@ class DiagramParser {
 
   getErrorMessage = error => {
     if (error instanceof Error) {
-      return this.utils.escape(error.stack)
+      const message = error.message ? `${error.name || "Error"}: ${error.message}` : ""
+      const stack = error.stack || ""
+      const text = stack.includes(error.message) ? stack : [message, stack].filter(Boolean).join("\n")
+      return this.utils.escape(text || error.toString())
     }
     const { errorLine, reason } = error || {}
     let msg = errorLine ? this.i18n.t("global", "error.atLine", { errorLine }) : ""
@@ -189,6 +193,22 @@ class DiagramParser {
     }
   }
 
+  rememberFailedRender = (cid, lang, content) => this.failedRenderCache.set(cid, { lang, content })
+
+  clearFailedRender = cid => this.failedRenderCache.delete(cid)
+
+  hasFailedRenderPanel = $pre => $pre.find(".md-diagram-panel-error pre").length > 0
+
+  shouldSkipFailedRender = (cid, lang, content, $pre) => {
+    const record = this.failedRenderCache.get(cid)
+    return !!(
+      record
+      && record.lang === lang
+      && record.content === content
+      && this.hasFailedRenderPanel($pre)
+    )
+  }
+
   appendPanelIfNeed = $pre => {
     if ($pre.find(".md-diagram-panel").length === 0) {
       $pre.append(this.PANEL)
@@ -197,23 +217,30 @@ class DiagramParser {
 
   renderCustomDiagram = async (cid, lang, $pre) => {
     const parser = this.parsers.get(lang)
+    const content = this.utils.getFenceContentByCid(cid)
+    if (this.shouldSkipFailedRender(cid, lang, content, $pre)) return
 
     this.cleanErrorMsg($pre)
     this.destroyIfNeed(parser, cid, lang, $pre)
 
-    const content = this.utils.getFenceContentByCid(cid)
     $pre.addClass("md-fences-advanced")
     this.appendPanelIfNeed($pre)
 
     if (!content) {
+      this.clearFailedRender(cid)
       await this.onEmptyContent(cid, lang, $pre)
       return
     }
 
-    if (!parser.renderFunc) return
+    if (!parser.renderFunc) {
+      this.clearFailedRender(cid)
+      return
+    }
     try {
       await parser.renderFunc(cid, content, $pre, lang)
+      this.clearFailedRender(cid)
     } catch (error) {
+      this.rememberFailedRender(cid, lang, content)
       await this.onRenderFailed(cid, lang, $pre, content, error)
     }
   }
@@ -227,6 +254,7 @@ class DiagramParser {
     if (!this.isDiagramType(lang)) {
       $pre.children(".fence-enhance").show()
       $pre.removeClass("md-fences-advanced md-fences-interactive plugin-custom-diagram")
+      this.clearFailedRender(cid)
       await this.onCancel(cid)
     } else {
       // If it is Diagram, but not a custom type, do not show the enhancement button and return directly.
@@ -239,6 +267,7 @@ class DiagramParser {
         await this.renderCustomDiagram(cid, lang, $pre)
       } else {
         $pre.removeClass("md-fences-interactive plugin-custom-diagram")
+        this.clearFailedRender(cid)
         await this.onCancel(cid)
       }
     }
@@ -370,6 +399,7 @@ class DiagramParser {
 
   onChangeFile = () => {
     this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.otherFileOpened, () => {
+      this.failedRenderCache.clear()
       for (const p of this.parsers.values()) {
         p.destroyAllFunc?.()
       }

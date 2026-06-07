@@ -92,7 +92,10 @@ class ThirdPartyDiagramParser {
         parser.instanceMap.set(cid, instance)
       }
     } catch (e) {
-      const reason = `${e.stack}\n\nDiagram Parser Settings:\n${this.getSettingMsg(parser)}`
+      const message = e instanceof Error && e.message ? `${e.name || "Error"}: ${e.message}` : ""
+      const stack = e instanceof Error ? (e.stack || "") : String(e)
+      const errorText = stack.includes(e?.message) ? stack : [message, stack].filter(Boolean).join("\n")
+      const reason = `${errorText}\n\nDiagram Parser Settings:\n${this.getSettingMsg(parser)}`
       this.utils.diagramParser.throwParseError(null, reason)
     }
   }

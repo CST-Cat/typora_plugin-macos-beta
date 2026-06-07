@@ -122,6 +122,167 @@
   }
   pathShim.posix = pathShim
 
+  const pathToFileURL = (file) => {
+    const resolved = pathShim.resolve(file)
+    const pathname = resolved
+      .split("/")
+      .map((part, index) => index === 0 && part === "" ? "" : encodeURIComponent(part))
+      .join("/")
+    return new URL(`file://${pathname.startsWith("/") ? "" : "/"}${pathname}`)
+  }
+
+  const fileURLToPath = (value) => {
+    const url = value instanceof URL ? value : new URL(String(value))
+    if (url.protocol !== "file:") {
+      throw new TypeError("The URL must be of scheme file")
+    }
+    if (url.hostname && url.hostname !== "localhost") {
+      throw new TypeError("File URL host must be empty or localhost")
+    }
+    return decodeURIComponent(url.pathname)
+  }
+
+  const urlShim = {
+    URL: globalThis.URL,
+    URLSearchParams: globalThis.URLSearchParams,
+    pathToFileURL,
+    fileURLToPath,
+    parse: (value) => {
+      const url = new URL(String(value), "file:///")
+      return {
+        protocol: url.protocol,
+        slashes: true,
+        auth: url.username || url.password ? `${decodeURIComponent(url.username)}:${decodeURIComponent(url.password)}` : null,
+        host: url.host,
+        port: url.port,
+        hostname: url.hostname,
+        hash: url.hash,
+        search: url.search,
+        query: url.search ? url.search.slice(1) : null,
+        pathname: url.pathname,
+        path: `${url.pathname}${url.search}`,
+        href: url.href,
+      }
+    },
+    format: (value) => value instanceof URL ? value.href : String(value?.href || value || ""),
+  }
+
+  const formatValue = (value) => {
+    if (typeof value === "string") return value
+    try {
+      return JSON.stringify(value)
+    } catch {
+      return String(value)
+    }
+  }
+
+  const utilShim = {
+    deprecate: (fn, message) => {
+      let warned = false
+      return function deprecated(...args) {
+        if (!warned) {
+          warned = true
+          console.warn(message)
+        }
+        return fn.apply(this, args)
+      }
+    },
+    format: (template, ...args) => {
+      if (typeof template !== "string") return [template, ...args].map(formatValue).join(" ")
+      let index = 0
+      const text = template.replace(/%[sdijoO%]/g, token => {
+        if (token === "%%") return "%"
+        if (index >= args.length) return token
+        const value = args[index++]
+        if (token === "%d" || token === "%i") return Number.parseInt(value, 10).toString()
+        if (token === "%j" || token === "%o" || token === "%O") return formatValue(value)
+        return String(value)
+      })
+      return [text, ...args.slice(index).map(formatValue)].join(" ")
+    },
+    inspect: formatValue,
+    inherits: (ctor, superCtor) => {
+      ctor.super_ = superCtor
+      ctor.prototype = Object.create(superCtor.prototype, {
+        constructor: {
+          value: ctor,
+          enumerable: false,
+          writable: true,
+          configurable: true,
+        },
+      })
+    },
+    promisify: (fn) => (...args) => new Promise((resolve, reject) => {
+      fn(...args, (error, value) => error ? reject(error) : resolve(value))
+    }),
+    types: {
+      isAnyArrayBuffer: value => value instanceof ArrayBuffer || Object.prototype.toString.call(value) === "[object SharedArrayBuffer]",
+    },
+  }
+
+  const bytesToBase64 = (bytes) => {
+    let binary = ""
+    const chunkSize = 0x8000
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize))
+    }
+    return btoa(binary)
+  }
+
+  const base64ToBytes = (base64) => {
+    const binary = atob(String(base64))
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i)
+    }
+    return bytes
+  }
+
+  const stringToBytes = text => new TextEncoder().encode(String(text))
+  const bytesToString = bytes => new TextDecoder("utf-8").decode(bytes)
+
+  const bufferFrom = (value, encoding) => {
+    let bytes
+    if (typeof value === "string") {
+      bytes = encoding === "base64" ? base64ToBytes(value) : stringToBytes(value)
+    } else if (value instanceof ArrayBuffer) {
+      bytes = new Uint8Array(value)
+    } else if (ArrayBuffer.isView(value)) {
+      bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+    } else if (Array.isArray(value)) {
+      bytes = new Uint8Array(value)
+    } else {
+      bytes = stringToBytes(value ?? "")
+    }
+
+    const buffer = new Uint8Array(bytes)
+    Object.defineProperty(buffer, "__isBufferShim", { value: true })
+    buffer.toString = (targetEncoding = "utf-8") => {
+      if (targetEncoding === "base64") return bytesToBase64(buffer)
+      return bytesToString(buffer)
+    }
+    return buffer
+  }
+
+  function BufferShim(value, encoding) {
+    return bufferFrom(value, encoding)
+  }
+  BufferShim.from = bufferFrom
+  BufferShim.isBuffer = value => !!value?.__isBufferShim
+  BufferShim.concat = (items, length) => {
+    const buffers = items.map(item => BufferShim.from(item))
+    const size = length ?? buffers.reduce((sum, item) => sum + item.length, 0)
+    const out = new Uint8Array(size)
+    let offset = 0
+    for (const item of buffers) {
+      out.set(item.subarray(0, Math.max(0, Math.min(item.length, size - offset))), offset)
+      offset += item.length
+      if (offset >= size) break
+    }
+    return BufferShim.from(out)
+  }
+  if (!globalThis.Buffer) globalThis.Buffer = BufferShim
+
   let helperInfo = null
   let helperReady = false
   let rpcId = 0
@@ -339,10 +500,13 @@
   }
 
   const shims = {
+    buffer: { Buffer: BufferShim },
     path: pathShim,
     fs: fsShim,
     "fs-extra": fsShim,
     os: osShim,
+    url: urlShim,
+    util: utilShim,
     child_process: childProcessShim,
     electron: electronShim,
   }

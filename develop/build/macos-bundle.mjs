@@ -14,17 +14,19 @@ const SETTINGS = join(PLUGIN_DIR, "global/settings/settings.default.toml")
 const SHIMS = join(MACOS_DIR, "shared-shims.js")
 
 const SHIM_MODULES = new Set([
+  "buffer",
   "path",
   "fs",
   "fs-extra",
   "os",
+  "url",
+  "util",
   "child_process",
   "electron",
 ])
 
 const UNSUPPORTED_MODULES = new Set([
   "assert",
-  "buffer",
   "crypto",
   "events",
   "extract-zip",
@@ -35,10 +37,7 @@ const UNSUPPORTED_MODULES = new Set([
   "stream",
   "tls",
   "tty",
-  "url",
-  "util",
   "worker_threads",
-  "zlib",
   "chromedriver",
   "debug",
   "electron-fetch",
@@ -104,11 +103,25 @@ function discoverBasePlugins() {
 }
 
 function discoverResourceModules() {
-  const foldDir = join(PLUGIN_DIR, "fence_enhance/resource/fold")
-  if (!existsSync(foldDir)) return []
-  return readdirSync(foldDir, { withFileTypes: true })
-    .filter(entry => entry.isFile() && entry.name.endsWith(".js"))
-    .map(entry => [entry.name.replace(/\.js$/, ""), join(foldDir, entry.name)])
+  const resourceDirs = [
+    {
+      dir: join(PLUGIN_DIR, "fence_enhance/resource/fold"),
+      filter: entry => entry.isFile() && entry.name.endsWith(".js"),
+    },
+    {
+      dir: join(PLUGIN_DIR, "wavedrom"),
+      filter: entry => entry.isFile()
+        && entry.name.endsWith(".js")
+        && !["index.js", "wavedrom.min.js"].includes(entry.name),
+    },
+  ]
+
+  return resourceDirs.flatMap(({ dir, filter }) => {
+    if (!existsSync(dir)) return []
+    return readdirSync(dir, { withFileTypes: true })
+      .filter(filter)
+      .map(entry => [entry.name.replace(/\.js$/, ""), join(dir, entry.name)])
+  })
 }
 
 function createRegistryModule() {
@@ -143,6 +156,11 @@ function macosBuildPlugin() {
         namespace: "macos-virtual",
       }))
 
+      builder.onResolve({ filter: /^zlib$/ }, () => ({
+        path: "zlib",
+        namespace: "macos-zlib",
+      }))
+
       builder.onResolve({ filter: /^[^./].*/ }, (args) => {
         if (SHIM_MODULES.has(args.path)) {
           return { path: args.path, namespace: "macos-shim" }
@@ -157,6 +175,46 @@ function macosBuildPlugin() {
         contents: createRegistryModule(),
         loader: "js",
         resolveDir: ROOT,
+      }))
+
+      builder.onLoad({ filter: /^zlib$/, namespace: "macos-zlib" }, () => ({
+        contents: `
+          const { deflateSync, strToU8 } = require("fflate")
+
+          const bytesToBase64 = bytes => {
+            let binary = ""
+            const chunkSize = 0x8000
+            for (let i = 0; i < bytes.length; i += chunkSize) {
+              binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize))
+            }
+            return btoa(binary)
+          }
+
+          const toBytes = input => {
+            if (typeof input === "string") return strToU8(input)
+            if (input instanceof Uint8Array) return input
+            if (input instanceof ArrayBuffer) return new Uint8Array(input)
+            if (ArrayBuffer.isView(input)) return new Uint8Array(input.buffer, input.byteOffset, input.byteLength)
+            return strToU8(String(input))
+          }
+
+          const toBufferLike = bytes => ({
+            length: bytes.length,
+            byteLength: bytes.byteLength,
+            toString: encoding => {
+              if (encoding === "base64") return bytesToBase64(bytes)
+              return new TextDecoder("utf-8").decode(bytes)
+            },
+            valueOf: () => bytes,
+            [Symbol.iterator]: () => bytes[Symbol.iterator](),
+          })
+
+          module.exports = {
+            deflateRawSync: input => toBufferLike(deflateSync(toBytes(input))),
+          }
+        `,
+        loader: "js",
+        resolveDir: __dirname,
       }))
 
       builder.onLoad({ filter: /.*/, namespace: "macos-shim" }, (args) => ({

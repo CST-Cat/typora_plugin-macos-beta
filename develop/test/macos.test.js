@@ -9,6 +9,7 @@ const { describe, it, afterEach } = require("node:test")
 const helper = require("../../plugin/macos/helper/server.js")
 
 const root = path.resolve(__dirname, "../..")
+const corePath = path.join(root, "plugin/global/core/index.js")
 const helperPath = path.join(root, "plugin/macos/helper/server.js")
 const bundlePath = path.join(root, "plugin/macos/entry.bundle.js")
 const loaderPath = path.join(root, "plugin/macos/loader.js")
@@ -137,9 +138,20 @@ describe("macOS helper server", () => {
     const payload = await result.json()
     assert.match(payload.error.message, /Path not allowed/)
   })
+
 })
 
 describe("macOS bundle artifacts", () => {
+  it("replays existing code fences for standalone files without a mount folder", async () => {
+    const core = await fsp.readFile(corePath, "utf-8")
+    const replayIndex = core.indexOf("Object.keys(queue).forEach")
+    const mountIndex = core.indexOf("File.getMountFolder() != null")
+
+    assert.notEqual(replayIndex, -1)
+    assert.notEqual(mountIndex, -1)
+    assert.ok(replayIndex < mountIndex)
+  })
+
   it("has a loader and bundle entry without global module.exports startup", async () => {
     const loader = await fsp.readFile(loaderPath, "utf-8")
     assert.match(loader, /entry\.bundle\.js/)
@@ -148,5 +160,10 @@ describe("macOS bundle artifacts", () => {
     assert.match(bundle, /macOS bundle entry failed/)
     assert.match(bundle, /createMacosLinterClient/)
     assert.doesNotMatch(bundle, /await module\.exports\(\)/)
+    assert.match(bundle, /deflateRawSync/)
+    assert.doesNotMatch(bundle, /Module is not available in macOS WebKit mode: buffer/)
+    assert.doesNotMatch(bundle, /Module is not available in macOS WebKit mode: zlib/)
+    assert.doesNotMatch(bundle, /macos-unsupported:url/)
+    assert.doesNotMatch(bundle, /macos-unsupported:util/)
   })
 })

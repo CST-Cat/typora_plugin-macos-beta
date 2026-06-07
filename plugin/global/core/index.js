@@ -58,13 +58,16 @@ async function loadPlugins(container, settings) {
   await _postprocessMixins(...Object.values(utils.mixins))
 
   // Re-emit events (e.g., afterAddCodeBlock) that may have been missed due to async execution.
-  if (File.getMountFolder() != null) {
-    setTimeout(() => {
-      Object.keys(File.editor.fences.queue).forEach(cid => File.editor.fences.addCodeBlock(cid))
+  setTimeout(() => {
+    const queue = File?.editor?.fences?.queue
+    if (queue) {
+      Object.keys(queue).forEach(cid => File.editor.fences.addCodeBlock(cid))
+    }
+    if (File.getMountFolder() != null) {
       const filePath = utils.getFilePath()
       if (filePath) File.editor.library.openFile(filePath)
-    }, 80)
-  }
+    }
+  }, 80)
 }
 
 function toggleDarkMode(settings) {

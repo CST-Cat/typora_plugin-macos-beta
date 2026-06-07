@@ -249,8 +249,21 @@ class utils {
     let called = false
     return function (...args) {
       if (!called) {
-        called = true
-        result = fn.apply(this, args)
+        try {
+          called = true
+          result = fn.apply(this, args)
+          if (result?.then) {
+            result = result.catch(error => {
+              called = false
+              result = undefined
+              throw error
+            })
+          }
+        } catch (error) {
+          called = false
+          result = undefined
+          throw error
+        }
       }
       return result
     }

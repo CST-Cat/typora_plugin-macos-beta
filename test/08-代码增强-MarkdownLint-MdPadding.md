@@ -181,3 +181,7 @@ $$
 ## **MD102 整个标题都加粗**
 
 行内数学 $x + y$ 和 $$x + y$$ 混用，测试自定义 MD103。
+
+
+
+<span style="font-weight:bold; font-style:italic; text-decoration:underline line-through overline; font-size:2.2em; vertical-align:sub; letter-spacing:8pt; font-family:serif; color:#004C99; background:#FFFFFF; border:1px solid #330000;">花体文字 typora-plugin</span>
