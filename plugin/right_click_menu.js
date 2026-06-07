@@ -58,11 +58,7 @@ class RightClickMenuPlugin extends BasePlugin {
     this.utils.settings.autoSave(this)
     this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.allPluginsHadInjected, () => {
       setTimeout(() => {
-        if (this._isMacosWebKit()) {
-          this.listenMacosNativeContextMenu()
-        } else {
-          this.insertLevel1()  // The 1st level menus group all plugins
-        }
+        this.insertLevel1()  // The 1st level menus group all plugins
         this.insertLevel2()  // The 2nd level menus display grouped plugins
         this.insertLevel3()  // The 3rd level menus display the actions of the plugin
         this.listen()
@@ -70,12 +66,8 @@ class RightClickMenuPlugin extends BasePlugin {
     })
   }
 
-  _isMacosWebKit = () => typeof window !== "undefined" && !!window.__TP_MACOS__
-
-  _level1Selector = () => "#context-menu"
-
-  _level1ItemsHTML = (extraAttrs = "") => {
-    return this.config.MENUS.map(({ NAME, LIST = [] }, idx) => {
+  insertLevel1 = () => {
+    const items = this.config.MENUS.map(({ NAME, LIST = [] }, idx) => {
       if (LIST.length === 0) {
         return ""
       }
@@ -84,37 +76,11 @@ class RightClickMenuPlugin extends BasePlugin {
       const caret = noExtraMenu ? "" : `<i class="fa fa-caret-right"></i>`
       const a = `<a role="menuitem"><span data-lg="Menu" data-localize="${name}">${name}</span>${caret}</a>`
       return noExtraMenu
-        ? `<li${extraAttrs} data-key="${this.noExtraMenuGroupName}" data-value="${LIST[0]}" data-idx="${idx}">${a}</li>`
-        : `<li${extraAttrs} class="has-extra-menu" data-key="${this.groupName}" data-idx="${idx}">${a}</li>`
-    }).join("")
-  }
-
-  insertLevel1 = () => {
-    document.querySelector("#context-menu")?.insertAdjacentHTML("beforeend", `<li class="divider"></li>${this._level1ItemsHTML()}`)
-  }
-
-  insertMacosNativeLevel1 = () => {
-    const menu = document.querySelector("#context-menu")
-    if (!menu) return false
-    if (menu.querySelector(':scope > [data-plugin-macos-root="true"]')) return true
-    menu.querySelectorAll(':scope > [data-plugin-macos-root="true"]').forEach(el => el.remove())
-    const attrs = ' data-plugin-macos-root="true"'
-    menu.insertAdjacentHTML("beforeend", `<li class="divider"${attrs}></li>${this._level1ItemsHTML(attrs)}`)
-    return true
-  }
-
-  listenMacosNativeContextMenu = () => {
-    const ensure = () => {
-      if (this.insertMacosNativeLevel1()) return
-      let retry = 0
-      const timer = setInterval(() => {
-        if (this.insertMacosNativeLevel1() || ++retry > 20) clearInterval(timer)
-      }, 25)
-    }
-    ensure()
-    const target = this.utils.entities.eContent || document.querySelector("content") || document.body
-    target?.addEventListener("contextmenu", () => setTimeout(ensure), true)
-    new MutationObserver(ensure).observe(document.body, { childList: true, subtree: true })
+        ? `<li data-key="${this.noExtraMenuGroupName}" data-value="${LIST[0]}" data-idx="${idx}">${a}</li>`
+        : `<li class="has-extra-menu" data-key="${this.groupName}" data-idx="${idx}">${a}</li>`
+    })
+    const html = `<li class="divider"></li>` + items.join("")
+    document.querySelector("#context-menu").insertAdjacentHTML("beforeend", html)
   }
 
   insertLevel2 = () => {
@@ -236,12 +202,9 @@ class RightClickMenuPlugin extends BasePlugin {
   listen = () => {
     const self = this
     const { menuManager } = this
-    const level1Selector = this._level1Selector()
-    const level1Root = this._isMacosWebKit() ? $(document) : $(level1Selector)
-    const selector = subSelector => this._isMacosWebKit() ? `${level1Selector} ${subSelector}` : subSelector
 
     // Click on the first level menu
-    level1Root.on("click", selector(`[data-key="${this.noExtraMenuGroupName}"]`), function () {
+    $("#context-menu").on("click", `[data-key="${this.noExtraMenuGroupName}"]`, function () {
       const [fixedName, action] = (this.dataset.value || "").split(".")
       if (!fixedName || !action) {
         return false
@@ -250,7 +213,7 @@ class RightClickMenuPlugin extends BasePlugin {
       self.callPluginDynamicAction(fixedName, action)
       self.hideMenuIfNeed()
       // Display the second level menu
-    }).on("mouseenter", selector("[data-key]"), function () {
+    }).on("mouseenter", "[data-key]", function () {
       if (self.groupName === this.dataset.key) {
         const idx = this.dataset.idx
         if (menuManager.isDifferentSecond(idx)) {

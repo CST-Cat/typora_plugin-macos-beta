@@ -1,138 +1,20 @@
 const createLinterClient = (workerPath, hooks, contentProvider) => {
   const ACTION = { CONFIGURE: "configure", CLOSE: "close", CHECK: "check", FIX: "fix" }
   const { onCheck, onFix, onError } = hooks
-  const worker = createWorker(workerPath)
+  const worker = new Worker(workerPath)
   worker.onmessage = event => {
-    const { action, result, error } = event.data || {}
-    if (error) {
-      onError(error)
-      return
-    }
+    const { action, result } = event.data
     const onEvent = (action === ACTION.FIX) ? onFix : onCheck
     onEvent(result)
   }
-  worker.onerror = event => onError({
-    message: [
-      event.message || "Markdownlint worker error",
-      event.filename || workerPath,
-      event.lineno != null ? `${event.lineno}:${event.colno || 0}` : "",
-    ].filter(Boolean).join("\n"),
-  })
-  const send = async (action, customPayload = {}) => {
-    try {
-      const needsContent = action === ACTION.CHECK || action === ACTION.FIX
-      const content = needsContent ? await contentProvider() : undefined
-      worker.postMessage({ action, payload: { ...customPayload, content } })
-    } catch (error) {
-      onError({ message: error?.stack || error?.message || String(error) })
-    }
-  }
+  worker.onerror = event => onError(event)
+  const send = (action, customPayload) => worker.postMessage({ action, payload: { content: contentProvider(), ...customPayload } })
   return {
     configure: (payload) => send(ACTION.CONFIGURE, payload),
     close: () => send(ACTION.CLOSE),
     check: () => send(ACTION.CHECK),
     fix: (fixInfo) => send(ACTION.FIX, { fixInfo }),
   }
-}
-
-const createMacosLinterClient = (hooks, contentProvider) => {
-  const ACTION = { CHECK: "check", FIX: "fix" }
-  const { onCheck, onFix, onError } = hooks
-  let LIB
-  let RULE_CONFIG
-  let CUSTOM_RULES
-
-  const report = (message, level = "info") => {
-    window.__TP_MACOS__?.rpc?.("diagnostic.log", {
-      source: "markdownlint",
-      level,
-      message,
-    }).catch(() => {})
-  }
-  const loadCustomRule = file => {
-    const normalized = String(file || "").replace(/\\/g, "/")
-    if (normalized.endsWith("/plugin/markdownlint/custom-rules.js") || normalized === "plugin/markdownlint/custom-rules.js") {
-      return require("./custom-rules.js")
-    }
-    throw new Error(`Custom markdownlint rule is not available in macOS WebKit mode: ${file}`)
-  }
-  const configure = async ({ ruleConfig, customRuleFiles = [] } = {}) => {
-    LIB = require("./markdownlint.min.js")
-    const helpers = require("./markdownlint-rule-helpers.min.js")
-    RULE_CONFIG = ruleConfig
-    const customRuleLoaders = []
-    for (const file of customRuleFiles) {
-      try {
-        customRuleLoaders.push(loadCustomRule(file))
-      } catch (error) {
-        report(error?.message || String(error), "warn")
-      }
-    }
-    CUSTOM_RULES = customRuleLoaders.flatMap(define => define(helpers))
-    report(`configured markdownlint@${LIB.getVersion()} with ${CUSTOM_RULES.length} custom rules`)
-  }
-  const run = async (action, customPayload = {}) => {
-    try {
-      if (!LIB) await configure()
-      const content = await contentProvider()
-      if (action === ACTION.FIX) {
-        if (customPayload.fixInfo?.length) onFix(LIB.applyFixes(content, customPayload.fixInfo))
-        return
-      }
-      const result = await LIB.lint({ strings: { content }, config: RULE_CONFIG, customRules: CUSTOM_RULES })
-      const fixInfos = result.content || []
-      report(`checked ${fixInfos.length} issues in ${content.length} chars`)
-      onCheck(fixInfos)
-    } catch (error) {
-      const message = error?.stack || error?.message || String(error)
-      report(message, "error")
-      onError({ message })
-    }
-  }
-
-  return {
-    configure,
-    close: () => {},
-    check: () => run(ACTION.CHECK),
-    fix: (fixInfo) => run(ACTION.FIX, { fixInfo }),
-  }
-}
-
-const toFileUrl = path => {
-  if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return path
-  return `file://${String(path).split("/").map(encodeURIComponent).join("/")}`
-}
-
-const createWorker = workerPath => {
-  if (typeof window === "undefined" || !window.__TP_MACOS__) {
-    return new Worker(workerPath)
-  }
-
-  const workerUrl = toFileUrl(workerPath)
-  const source = `
-    const __moduleCache = new Map()
-    const __toFileUrl = path => {
-      if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return path
-      return "file://" + String(path).split("/").map(encodeURIComponent).join("/")
-    }
-    self.require = id => {
-      const url = __toFileUrl(id)
-      if (__moduleCache.has(url)) return __moduleCache.get(url)
-      const previousModule = self.module
-      const previousExports = self.exports
-      const module = { exports: {} }
-      self.module = module
-      self.exports = module.exports
-      importScripts(url)
-      __moduleCache.set(url, module.exports)
-      self.module = previousModule
-      self.exports = previousExports
-      return module.exports
-    }
-    importScripts(${JSON.stringify(workerUrl)})
-  `
-  const blob = new Blob([source], { type: "text/javascript" })
-  return new Worker(URL.createObjectURL(blob))
 }
 
 class MarkdownlintPlugin extends BasePlugin {
@@ -171,13 +53,11 @@ class MarkdownlintPlugin extends BasePlugin {
   }
 
   init = () => {
-    const workerPath = window.__TP_MACOS__
-      ? this.utils.joinPluginPath("plugin/markdownlint/linter-worker.js")
-      : "plugin/markdownlint/linter-worker.js"
-    const hooks = { onCheck: this._onCheck, onFix: this._onFix, onError: event => console.error(event.message) }
-    const client = window.__TP_MACOS__
-      ? createMacosLinterClient(hooks, this._getLintContent)
-      : createLinterClient(workerPath, hooks, this._getLintContent)
+    const client = createLinterClient(
+      "plugin/markdownlint/linter-worker.js",
+      { onCheck: this._onCheck, onFix: this._onFix, onError: event => console.error(event.message) },
+      () => this.utils.getCurrentFileContent(),
+    )
     this.linter = {
       configure: async ({ ruleConfig = this.config.RULE_CONFIG, customRuleFiles = this.config.CUSTOM_RULE_FILES, persistent = false } = {}) => {
         if (persistent) {
@@ -210,15 +90,8 @@ class MarkdownlintPlugin extends BasePlugin {
   process = () => {
     const onLifecycle = () => {
       const { eventHub } = this.utils
-      const debouncedCheck = this.utils.debounce(this.linter.check, 500)
-      const delayedCheck = delay => setTimeout(() => this.linter.check(), delay)
-      eventHub.addEventListener(eventHub.eventType.fileEdited, debouncedCheck)
-      eventHub.addEventListener(eventHub.eventType.fileContentLoaded, () => delayedCheck(window.__TP_MACOS__ ? 500 : 0))
-      eventHub.addEventListener(eventHub.eventType.fileOpened, () => delayedCheck(window.__TP_MACOS__ ? 800 : 0))
-      eventHub.addEventListener(eventHub.eventType.allPluginsHadInjected, () => {
-        this.linter.configure()
-        delayedCheck(window.__TP_MACOS__ ? 1000 : 0)
-      })
+      eventHub.addEventListener(eventHub.eventType.fileEdited, this.utils.debounce(this.linter.check, 500))
+      eventHub.addEventListener(eventHub.eventType.allPluginsHadInjected, () => this.linter.configure())
       eventHub.addEventListener(eventHub.eventType.toggleSettingPage, force => {
         if (force) {
           this.entities.panel.toggle(force)
@@ -242,7 +115,7 @@ class MarkdownlintPlugin extends BasePlugin {
     }
 
     const fnMap = {
-      close: () => this.entities.panel.toggle(true),
+      close: () => this.call(),
       refresh: () => {
         this.linter.check()
         this.utils.notification.show(this.i18n.t("success.refresh"))
@@ -261,30 +134,13 @@ class MarkdownlintPlugin extends BasePlugin {
     }
 
     const onElementEvent = () => {
-      const onIndicatorMouseDown = ev => {
+      this.entities.button?.addEventListener("mousedown", ev => {
         if (ev.button === 0) {
-          ev.preventDefault()
-          ev.stopPropagation()
           this.call()
         } else if (ev.button === 2) {
-          ev.preventDefault()
-          ev.stopPropagation()
           fnMap[this.config.RIGHT_CLICK_INDICATOR_ACTION]?.()
         }
-      }
-      const isIndicatorHit = ev => {
-        const rect = this.entities.button?.getBoundingClientRect()
-        if (!rect) return false
-        const hitPadding = 12
-        return ev.clientX >= rect.left - hitPadding
-          && ev.clientX <= rect.right + hitPadding
-          && ev.clientY >= rect.top - hitPadding
-          && ev.clientY <= rect.bottom + hitPadding
-      }
-      this.entities.button?.addEventListener("mousedown", onIndicatorMouseDown)
-      document.addEventListener("mousedown", ev => {
-        if (isIndicatorHit(ev)) onIndicatorMouseDown(ev)
-      }, true)
+      })
       this.entities.wrap.addEventListener("mousedown", ev => {
         ev.preventDefault()
         ev.stopPropagation()
@@ -303,27 +159,8 @@ class MarkdownlintPlugin extends BasePlugin {
   }
 
   call = () => {
-    window.__TP_MACOS__?.rpc?.("diagnostic.log", {
-      source: "markdownlint",
-      level: "info",
-      message: "Markdownlint panel requested",
-    }).catch(() => {})
-    const panel = this.entities.panel
-    panel.hidden = false
-    panel.removeAttribute("hidden")
-    panel.style.setProperty("display", "flex", "important")
-    panel.style.setProperty("visibility", "visible", "important")
-    panel.style.setProperty("opacity", "1", "important")
-    panel.style.setProperty("right", "64px", "important")
-    panel.style.setProperty("left", "auto", "important")
-    panel.style.setProperty("top", "128px", "important")
-    panel.style.setProperty("width", "min(620px, calc(100vw - 96px))", "important")
-    panel.style.setProperty("height", "min(420px, calc(100vh - 176px))", "important")
-    panel.style.setProperty("z-index", "10001", "important")
-    panel.style.setProperty("transform", "none", "important")
-    panel.classList.remove("hiding", "plugin-common-hidden")
-    panel.classList.add("showing")
-    setTimeout(() => this.linter.check(), 0)
+    this.entities.panel.toggle()
+    this.linter.check()
   }
 
   settings = async () => {
@@ -458,32 +295,7 @@ class MarkdownlintPlugin extends BasePlugin {
     })
   }
 
-  _getLintContent = async () => {
-    const readCurrent = reader => {
-      try {
-        const content = reader?.()
-        return typeof content === "string" ? content : ""
-      } catch (error) {
-        if (!window.__TP_MACOS__) throw error
-        console.warn("[Markdownlint] Failed to read current editor content", error)
-        return ""
-      }
-    }
-    const editorContent = readCurrent(() => this.utils.getCurrentFileContent())
-    if (editorContent || !window.__TP_MACOS__) return editorContent
-
-    if (typeof File !== "undefined" && typeof File.getContent === "function") {
-      const fileContent = await Promise.resolve(File.getContent()).catch(error => {
-        console.warn("[Markdownlint] Failed to read File.getContent()", error)
-        return ""
-      })
-      if (typeof fileContent === "string") return fileContent
-    }
-    return readCurrent(() => window.getMarkdown?.())
-  }
-
   _onCheck = fixInfos => {
-    fixInfos = Array.isArray(fixInfos) ? fixInfos : []
     this.fixInfos = fixInfos
     this.entities.button?.toggleAttribute("lint-check-failed", !!fixInfos.length)
     if (!this.entities.panel.hidden) {

@@ -14,6 +14,15 @@ const SETTINGS = join(PLUGIN_DIR, "global/settings/settings.default.toml")
 const SHIMS = join(MACOS_DIR, "shared-shims.js")
 const DRAWIO_ENTRY = join(PLUGIN_DIR, "drawIO.js")
 const MARP_ENTRY = join(PLUGIN_DIR, "marp/index.js")
+const MACOS_ADAPTER_DIR = join(MACOS_DIR, "adapters")
+
+const MACOS_PLUGIN_ADAPTERS = new Map([
+  ["commander", join(MACOS_ADAPTER_DIR, "commander.js")],
+  ["image_viewer", join(MACOS_ADAPTER_DIR, "image_viewer.js")],
+  ["markdownlint", join(MACOS_ADAPTER_DIR, "markdownlint.js")],
+  ["right_click_menu", join(MACOS_ADAPTER_DIR, "right_click_menu.js")],
+  ["sidebar_enhance", join(MACOS_ADAPTER_DIR, "sidebar_enhance.js")],
+])
 
 const SHIM_MODULES = new Set([
   "buffer",
@@ -133,7 +142,7 @@ function createRegistryModule() {
         ? "macos-drawio-adapter"
         : name === "marp"
           ? "macos-marp-adapter"
-          : file
+          : MACOS_PLUGIN_ADAPTERS.get(name) || file
       return `  ${JSON.stringify(name)}: () => require(${JSON.stringify(modulePath)}),`
     })
     .join("\n")
