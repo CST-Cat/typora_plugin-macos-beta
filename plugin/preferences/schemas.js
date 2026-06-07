@@ -100,7 +100,6 @@ const UNITS = {
 }
 
 const OPTS = {
-  commanderShells: ["cmd/bash", "zsh", "powershell", "gitbash", "wsl"],
   textStylizeTools: ["weight", "italic", "underline", "throughline", "overline", "superScript", "subScript", "emphasis", "blur", "title", "increaseSize", "decreaseSize", "increaseLetterSpacing", "decreaseLetterSpacing", "family", "foregroundColor", "backgroundColor", "borderColor", "erase", "blank", "setBrush", "useBrush"],
   imageViewerTools: ["close", "download", "scroll", "play", "location", "nextImage", "previousImage", "firstImage", "lastImage", "thumbnailNav", "waterfall", "zoomIn", "zoomOut", "rotateLeft", "rotateRight", "hFlip", "vFlip", "translateLeft", "translateRight", "translateUp", "translateDown", "incHSkew", "decHSkew", "incVSkew", "decVSkew", "originSize", "fitScreen", "autoSize", "restore", "info", "dummy"],
   markdownlintTools: ["settings", "detailAll", "fixAll", "toggleSourceMode", "refresh", "close"],
@@ -225,7 +224,7 @@ const schema_commander = () => [
     .NestedBoxes([
       Group(
         Switch("disable"),
-        Select("shell").Options(OPTS.commanderShells).OptionScope("BUILTIN.shell"),
+        Select("shell").Options(["cmd/bash", "powershell", "gitbash", "wsl"]).OptionScope("BUILTIN.shell"),
         Text("name"),
       ),
       Textarea("cmd").Rows(5).Placeholder("envInfo"),
@@ -233,7 +232,7 @@ const schema_commander = () => [
     .DefaultValues({
       name: "",
       disable: false,
-      shell: typeof File !== "undefined" && File.isMac ? "zsh" : "cmd/bash",
+      shell: "cmd/bash",
       cmd: "",
     }),
   Code("POST_SCRIPT").Tooltip("expertsOnly"),

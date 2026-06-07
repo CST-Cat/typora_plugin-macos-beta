@@ -159,6 +159,7 @@ describe("macOS bundle artifacts", () => {
     const bundle = await fsp.readFile(bundlePath, "utf-8")
     assert.match(bundle, /macOS bundle entry failed/)
     assert.match(bundle, /createMacosLinterClient/)
+    assert.match(bundle, /MacosPreferencesPlugin/)
     assert.doesNotMatch(bundle, /await module\.exports\(\)/)
     assert.match(bundle, /deflateRawSync/)
     assert.doesNotMatch(bundle, /Module is not available in macOS WebKit mode: buffer/)

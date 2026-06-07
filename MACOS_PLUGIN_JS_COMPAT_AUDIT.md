@@ -1,8 +1,10 @@
 # macOS 插件 JS 上游一致性检查
 
-日期：2026-06-07
+日期：2026-06-08
 
-基准：`origin/master`（`https://github.com/obgnail/typora_plugin.git`）
+基准：GitHub 真上游 `obgnail/typora_plugin` 当前 `master`（`36913c3`，`https://github.com/obgnail/typora_plugin.git`）
+
+复核方式：临时干净克隆 GitHub 真上游后逐文件比较，不以本地 `origin/master` 指针作为结论来源。
 
 检查范围：
 
@@ -14,35 +16,42 @@
 
 分类说明：
 
-- `上游原版/未魔改`：插件 JS 与 `origin/master` 一致，未发现专属 bundle adapter。
-- `上游原版 + bundle adapter`：插件 JS 与 `origin/master` 一致，macOS 差异放在 bundle adapter。
-- `上游原版 + bundle shim`：插件 JS 与 `origin/master` 一致，macOS 差异由 bundle shim 补齐。
-- `魔改（入口 JS）`：对应入口 JS 与 `origin/master` 不一致。
-- `魔改（辅助 JS）`：入口 JS 与上游一致，但同插件目录下辅助 JS 与上游不一致。
+- `上游原版/未魔改`：插件 JS 与 GitHub 真上游一致，未发现专属 bundle adapter。
+- `上游原版 + bundle adapter`：插件 JS 与 GitHub 真上游一致，macOS 差异放在 bundle adapter。
+- `上游原版 + bundle shim`：插件 JS 与 GitHub 真上游一致，macOS 差异由 bundle shim 补齐。
+- `魔改（入口 JS）`：对应入口 JS 与 GitHub 真上游不一致。
+- `魔改（辅助 JS）`：入口 JS 与 GitHub 真上游一致，但同插件目录下辅助 JS 与 GitHub 真上游不一致。
 
 汇总：
 
+- 对照 GitHub 真上游共比较：58 个插件、109 个 JS 文件。
+- 与真上游一致：109 个 JS 文件。
+- 与真上游不一致：0 个 JS 文件。
 - 上游原版/未魔改：47
-- 上游原版 + bundle adapter：2
+- 上游原版 + bundle adapter：10
 - 上游原版 + bundle shim：1
-- 魔改（入口 JS）：7
-- 魔改（辅助 JS）：1
+- 魔改（入口 JS）：0
+- 魔改（辅助 JS）：0
+
+迁移记录：
+
+- 之前列为 `魔改（入口 JS）` 的 7 个插件入口已部分迁移回上游原版：`window_tab`、`markdownlint`、`commander`、`command_palette`、`image_viewer`、`sidebar_enhance`、`right_click_menu` 当前入口/插件目录 JS 均与 GitHub 真上游一致。
+- macOS 差异改由 `plugin/macos/adapters/*`、bundle virtual adapter 或 bundle shim 承担。
+- 最后一处 `preferences` 辅助 JS 差异也已迁移到 `plugin/macos/adapters/preferences.js`；`plugin/preferences/schemas.js` 当前与 GitHub 真上游一致。
 
 ## 01. 标签页管理
 
 - fixedName：`window_tab`
 - JS 文件：`plugin/window_tab.js`
-- 分类：`魔改（入口 JS）`
-- 说明：入口 JS 与上游不一致。
-- 变更 JS：`plugin/window_tab.js`
+- 分类：`上游原版 + bundle adapter`
+- 说明：入口 JS 与 GitHub 真上游一致；macOS 标签栏布局、滚动记忆和拖拽等差异由 `plugin/macos/adapters/window_tab.js` 承担。
 
 ## 02. 格式检查
 
 - fixedName：`markdownlint`
 - JS 文件：`plugin/markdownlint/index.js`
-- 分类：`魔改（入口 JS）`
-- 说明：入口 JS 与上游不一致。
-- 变更 JS：`plugin/markdownlint/index.js`、`plugin/markdownlint/linter-worker.js`
+- 分类：`上游原版 + bundle adapter`
+- 说明：插件目录 JS 与 GitHub 真上游一致；macOS WebKit worker/CommonJS/内容读取兼容由 `plugin/macos/adapters/markdownlint.js` 承担。
 
 ## 03. 右侧大纲
 
@@ -90,17 +99,15 @@
 
 - fixedName：`commander`
 - JS 文件：`plugin/commander.js`
-- 分类：`魔改（入口 JS）`
-- 说明：入口 JS 与上游不一致。
-- 变更 JS：`plugin/commander.js`
+- 分类：`上游原版 + bundle adapter`
+- 说明：入口 JS 与 GitHub 真上游一致；macOS shell 调用和面板交互兼容由 `plugin/macos/adapters/commander.js` 承担。配置 schema 的 `zsh` 默认值差异记录在第 37 项。
 
 ## 10. 命令面板
 
 - fixedName：`command_palette`
 - JS 文件：`plugin/command_palette.js`
-- 分类：`魔改（入口 JS）`
-- 说明：入口 JS 与上游不一致。
-- 变更 JS：`plugin/command_palette.js`
+- 分类：`上游原版 + bundle adapter`
+- 说明：入口 JS 与 GitHub 真上游一致；macOS 命令提供者和执行兼容由 `plugin/macos/adapters/command_palette.js` 承担。
 
 ## 11. 中英文混排优化
 
@@ -190,9 +197,8 @@
 
 - fixedName：`image_viewer`
 - JS 文件：`plugin/image_viewer.js`
-- 分类：`魔改（入口 JS）`
-- 说明：入口 JS 与上游不一致。
-- 变更 JS：`plugin/image_viewer.js`
+- 分类：`上游原版 + bundle adapter`
+- 说明：入口 JS 与 GitHub 真上游一致；macOS 本地图片路径、modal 层和事件兼容由 `plugin/macos/adapters/image_viewer.js` 承担。
 
 ## 24. 文段截断
 
@@ -212,9 +218,8 @@
 
 - fixedName：`sidebar_enhance`
 - JS 文件：`plugin/sidebar_enhance.js`
-- 分类：`魔改（入口 JS）`
-- 说明：入口 JS 与上游不一致。
-- 变更 JS：`plugin/sidebar_enhance.js`
+- 分类：`上游原版 + bundle adapter`
+- 说明：入口 JS 与 GitHub 真上游一致；macOS 侧边栏 DOM/CSS 兼容由 `plugin/macos/adapters/sidebar_enhance.js` 承担。
 
 ## 27. 文字风格化
 
@@ -276,9 +281,8 @@
 
 - fixedName：`right_click_menu`
 - JS 文件：`plugin/right_click_menu.js`
-- 分类：`魔改（入口 JS）`
-- 说明：入口 JS 与上游不一致。
-- 变更 JS：`plugin/right_click_menu.js`
+- 分类：`上游原版 + bundle adapter`
+- 说明：入口 JS 与 GitHub 真上游一致；macOS 右键菜单注入兼容由 `plugin/macos/adapters/right_click_menu.js` 承担。
 
 ## 36. 圆盘菜单
 
@@ -291,9 +295,8 @@
 
 - fixedName：`preferences`
 - JS 文件：`plugin/preferences/index.js`
-- 分类：`魔改（辅助 JS）`
-- 说明：入口 JS 与上游一致，但同插件目录有辅助 JS 变更。
-- 变更 JS：`plugin/preferences/schemas.js`
+- 分类：`上游原版 + bundle adapter`
+- 说明：插件目录 JS 与 GitHub 真上游一致；commander 的 macOS shell schema/default `zsh` 适配由 `plugin/macos/adapters/preferences.js` 承担。
 
 ## 38. 快捷键中心
 

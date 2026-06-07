@@ -3,6 +3,22 @@ const CommanderPlugin = original.plugin
 
 const quoteShellArg = arg => `'${String(arg).replace(/'/g, `'\\''`)}'`
 
+const MACOS_TERMINAL_BUILTIN = {
+  name: "macOS Terminal",
+  disable: false,
+  shell: "zsh",
+  cmd: "cd $d && open -a Terminal .",
+}
+
+const withMacosBuiltins = (builtins) => {
+  const source = Array.isArray(builtins) ? builtins : []
+  const hasTerminal = source.some(item =>
+    item?.shell === MACOS_TERMINAL_BUILTIN.shell &&
+    item?.cmd === MACOS_TERMINAL_BUILTIN.cmd,
+  )
+  return hasTerminal ? source : [source[0], MACOS_TERMINAL_BUILTIN, ...source.slice(1)].filter(Boolean)
+}
+
 const createPosixShell = (context, binary, flag) => {
   const normalizePath = path => path || ""
   const replaceArgs = cmd => {
@@ -23,7 +39,7 @@ class MacosCommanderPlugin extends CommanderPlugin {
   SHELL = { CMD_BASH: "cmd/bash", ZSH: "zsh", POWER_SHELL: "powershell", GIT_BASH: "gitbash", WSL: "wsl" }
   AVAILABLE_SHELLS = new Set([this.SHELL.ZSH, this.SHELL.CMD_BASH])
   BUILTINS = (() => {
-    return this.config.BUILTIN.filter(e => !e.disable && e.shell && this.AVAILABLE_SHELLS.has(e.shell))
+    return withMacosBuiltins(this.config.BUILTIN).filter(e => !e.disable && e.shell && this.AVAILABLE_SHELLS.has(e.shell))
   })()
   STRATEGIES = (() => {
     const ctx = {
@@ -101,4 +117,4 @@ class MacosCommanderPlugin extends CommanderPlugin {
   }
 }
 
-module.exports = { ...original, plugin: MacosCommanderPlugin }
+module.exports = { ...original, plugin: MacosCommanderPlugin, withMacosBuiltins }

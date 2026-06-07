@@ -3,6 +3,24 @@ const WindowTabPlugin = original.plugin
 const TabManager = original.TabManager
 
 const noop = () => {}
+const MACOS_TAB_DRAG_THRESHOLD = 6
+
+const resolveMacosTabMoveIndex = (rects, fromIdx, clientX) => {
+  const count = rects.length
+  if (count === 0 || fromIdx < 0 || fromIdx >= count) return fromIdx
+
+  let insertIdx = count
+  for (let idx = 0; idx < count; idx++) {
+    const rect = rects[idx]
+    if (clientX < rect.left + rect.width / 2) {
+      insertIdx = idx
+      break
+    }
+  }
+
+  const toIdx = fromIdx < insertIdx ? insertIdx - 1 : insertIdx
+  return Math.min(Math.max(0, toIdx), count - 1)
+}
 
 class MacosTabManager extends TabManager {
   constructor(context) {
@@ -64,6 +82,8 @@ class MacosWindowTabPlugin extends WindowTabPlugin {
     const upstreamInsertTabDiv = this._insertTabDiv
     const upstreamRenderTabs = this._renderTabs
 
+    this._macosTabDragState = null
+    this._macosTabDragClickSuppressUntil = 0
     this._pendingScrollRestorePath = null
     this._activeScrollRestoreToken = null
     this._scrollRestoreTimers = []
@@ -82,15 +102,20 @@ class MacosWindowTabPlugin extends WindowTabPlugin {
       this._installMacosScrollRecorder()
       this._installMacosLayout()
       this._installMacosNewFileButton()
+      this._installMacosTabDragFallback()
       this._openInitialCurrentFile()
     }
     this._insertTabDiv = (filePath, showName, idx) => {
       if (!this.entities.tabWrapper) return
-      return upstreamInsertTabDiv(filePath, showName, idx)
+      const ret = upstreamInsertTabDiv(filePath, showName, idx)
+      this._syncMacosTabDragFallback()
+      return ret
     }
     this._renderTabs = wantOpenPath => {
       if (!this.entities.tabWrapper) return
-      return upstreamRenderTabs(wantOpenPath)
+      const ret = upstreamRenderTabs(wantOpenPath)
+      this._syncMacosTabDragFallback()
+      return ret
     }
     this._patchTabManager()
   }
@@ -218,6 +243,232 @@ class MacosWindowTabPlugin extends WindowTabPlugin {
       ev.stopImmediatePropagation()
       await this._createMacosNewFile()
     }, true)
+  }
+
+  _installMacosTabDragFallback = () => {
+    if (!this._isMacosWebKit() || this._macosTabDragFallbackInstalled || !this.entities.tabWrapper) return
+    this._macosTabDragFallbackInstalled = true
+    this._injectMacosTabDragStyle()
+    this._syncMacosTabDragFallback()
+    this.entities.tabWrapper.addEventListener("mousedown", this._onMacosTabMouseDown, true)
+    this.entities.tabWrapper.addEventListener("click", this._onMacosTabClick, true)
+    this.entities.tabWrapper.addEventListener("dragstart", this._onMacosNativeTabDragStart, true)
+    this.entities.tabWrapper.addEventListener("selectstart", this._onMacosTabSelectStart, true)
+  }
+
+  _syncMacosTabDragFallback = () => {
+    if (!this._isMacosWebKit() || !this.entities?.tabWrapper) return
+    this.entities.tabWrapper.querySelectorAll(".tab-container").forEach(tab => {
+      tab.draggable = false
+      tab.setAttribute("draggable", "false")
+    })
+  }
+
+  _injectMacosTabDragStyle = () => {
+    if (document.getElementById("plugin-window-tab-macos-drag-style")) return
+    const style = document.createElement("style")
+    style.id = "plugin-window-tab-macos-drag-style"
+    style.textContent = `
+      body.plugin-window-tab-macos #plugin-window-tab .tab-container {
+        cursor: default;
+        user-select: none !important;
+        -webkit-user-select: none !important;
+        -webkit-user-drag: none !important;
+      }
+
+      body.plugin-window-tab-macos #plugin-window-tab .tab-container * {
+        user-select: none !important;
+        -webkit-user-select: none !important;
+        -webkit-user-drag: none !important;
+      }
+
+      body.plugin-window-tab-macos #plugin-window-tab .tab-container .window-tab-name,
+      body.plugin-window-tab-macos #plugin-window-tab .tab-container .active-indicator {
+        pointer-events: none;
+      }
+
+      body.plugin-window-tab-macos-dragging {
+        user-select: none !important;
+        -webkit-user-select: none !important;
+      }
+
+      body.plugin-window-tab-macos #plugin-window-tab .tab-container.macos-tab-dragging {
+        opacity: 0.35;
+      }
+
+      body.plugin-window-tab-macos .macos-tab-drag-ghost {
+        box-sizing: border-box;
+        opacity: 0.9;
+        pointer-events: none;
+        position: fixed;
+        z-index: 99999;
+      }
+    `
+    document.head.append(style)
+  }
+
+  _onMacosNativeTabDragStart = ev => {
+    if (!this._isMacosWebKit()) return
+    if (!ev.target.closest("#plugin-window-tab .tab-container")) return
+    ev.preventDefault()
+    ev.stopImmediatePropagation()
+  }
+
+  _onMacosTabSelectStart = ev => {
+    if (!this._isMacosWebKit()) return
+    if (ev.target.closest("#plugin-window-tab .tab-container") && !ev.target.closest(".close-button")) {
+      ev.preventDefault()
+      ev.stopImmediatePropagation()
+    }
+  }
+
+  _onMacosTabClick = ev => {
+    if (Date.now() > this._macosTabDragClickSuppressUntil) return
+    this._macosTabDragClickSuppressUntil = 0
+    this._clearMacosTabSelection()
+    ev.preventDefault()
+    ev.stopImmediatePropagation()
+  }
+
+  _onMacosTabMouseDown = ev => {
+    if (!this._isMacosWebKit() || ev.button !== 0) return
+    if (ev.target.closest(".close-button")) return
+
+    const tabEl = ev.target.closest("#plugin-window-tab .tab-container")
+    if (!tabEl || !this.entities.tabWrapper.contains(tabEl)) return
+
+    const fromIdx = parseInt(tabEl.dataset.idx)
+    if (isNaN(fromIdx)) return
+
+    ev.preventDefault()
+    this._clearMacosTabSelection()
+    this._macosTabDragState = {
+      fromIdx,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      tabEl,
+      dragging: false,
+    }
+    document.addEventListener("mousemove", this._onMacosTabMouseMove, true)
+    document.addEventListener("mouseup", this._onMacosTabMouseUp, true)
+  }
+
+  _onMacosTabMouseMove = ev => {
+    const state = this._macosTabDragState
+    if (!state) return
+
+    const distanceX = Math.abs(ev.clientX - state.startX)
+    const distanceY = Math.abs(ev.clientY - state.startY)
+    if (!state.dragging && Math.max(distanceX, distanceY) < MACOS_TAB_DRAG_THRESHOLD) return
+
+    if (!state.dragging) this._startMacosLiveTabDrag(state, ev)
+    this._syncMacosLiveTabOrder(state, ev.clientX)
+    this._updateMacosTabDragGhost(state, ev)
+    this._clearMacosTabSelection()
+    ev.preventDefault()
+    ev.stopPropagation()
+  }
+
+  _onMacosTabMouseUp = ev => {
+    const state = this._macosTabDragState
+    this._macosTabDragState = null
+    document.removeEventListener("mousemove", this._onMacosTabMouseMove, true)
+    document.removeEventListener("mouseup", this._onMacosTabMouseUp, true)
+    if (!state) return
+
+    this._teardownMacosLiveTabDrag(state)
+    this._clearMacosTabSelection()
+    if (!state.dragging) return
+
+    ev.preventDefault()
+    ev.stopImmediatePropagation()
+    this._macosTabDragClickSuppressUntil = Date.now() + 400
+    this._commitMacosLiveTabOrder()
+  }
+
+  _startMacosLiveTabDrag = (state, ev) => {
+    const rect = state.tabEl.getBoundingClientRect()
+    state.dragging = true
+    state.offsetX = ev.clientX - rect.left
+    state.offsetY = ev.clientY - rect.top
+    state.ghostTop = rect.top
+
+    const ghost = state.tabEl.cloneNode(true)
+    ghost.classList.remove("macos-tab-dragging")
+    ghost.classList.add("macos-tab-drag-ghost")
+    ghost.style.width = `${rect.width}px`
+    ghost.style.height = `${rect.height}px`
+    document.body.append(ghost)
+    state.ghost = ghost
+
+    state.tabEl.classList.add("macos-tab-dragging")
+    document.body.classList.add("plugin-window-tab-macos-dragging")
+    this._updateMacosTabDragGhost(state, ev)
+  }
+
+  _syncMacosLiveTabOrder = (state, clientX) => {
+    const wrapper = this.entities?.tabWrapper
+    if (!wrapper || !state.tabEl?.isConnected) return
+
+    const tabs = Array.from(wrapper.querySelectorAll(".tab-container"))
+    const target = tabs.find(tab => {
+      if (tab === state.tabEl) return false
+      const rect = tab.getBoundingClientRect()
+      return clientX < rect.left + rect.width / 2
+    })
+    if (target) {
+      wrapper.insertBefore(state.tabEl, target)
+    } else {
+      wrapper.append(state.tabEl)
+    }
+  }
+
+  _updateMacosTabDragGhost = (state, ev) => {
+    if (!state.ghost) return
+    const left = Math.round(ev.clientX - state.offsetX)
+    const top = Math.round(state.ghostTop)
+    state.ghost.style.transform = `translate3d(${left}px, ${top}px, 0)`
+  }
+
+  _teardownMacosLiveTabDrag = state => {
+    state.tabEl.classList.remove("macos-tab-dragging")
+    document.body.classList.remove("plugin-window-tab-macos-dragging")
+    state.ghost?.remove()
+    state.ghost = null
+  }
+
+  _commitMacosLiveTabOrder = () => {
+    const wrapper = this.entities?.tabWrapper
+    if (!wrapper) return
+
+    const orderedTabs = Array.from(wrapper.querySelectorAll(".tab-container"))
+    const nextTabs = orderedTabs
+      .map(el => this.tab.getByIdx(parseInt(el.dataset.idx)))
+      .filter(Boolean)
+    if (nextTabs.length !== this.tab.count) {
+      this.tab.hooks.onRender?.(this.tab.current?.path)
+      return
+    }
+
+    const activePath = this.tab.current?.path
+    const before = this.tab.tabs.map(tab => tab.path).join("\n")
+    const after = nextTabs.map(tab => tab.path).join("\n")
+    if (before === after) return
+
+    this.tab.reset(nextTabs)
+    if (activePath) this.tab.open(activePath)
+    else this.tab.hooks.onRender?.(this.tab.current?.path)
+  }
+
+  _clearMacosTabSelection = () => {
+    window.getSelection?.()?.removeAllRanges?.()
+    document.getSelection?.()?.removeAllRanges?.()
+  }
+
+  _getMacosTabMoveIndex = (fromIdx, clientX) => {
+    const rects = Array.from(this.entities.tabWrapper.querySelectorAll(".tab-container"))
+      .map(el => el.getBoundingClientRect())
+    return resolveMacosTabMoveIndex(rects, fromIdx, clientX)
   }
 
   _openInitialCurrentFile = () => {
@@ -517,4 +768,4 @@ class MacosWindowTabPlugin extends WindowTabPlugin {
   }
 }
 
-module.exports = { ...original, plugin: MacosWindowTabPlugin, MacosTabManager }
+module.exports = { ...original, plugin: MacosWindowTabPlugin, MacosTabManager, resolveMacosTabMoveIndex }

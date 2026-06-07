@@ -21,6 +21,7 @@ const MACOS_PLUGIN_ADAPTERS = new Map([
   ["command_palette", join(MACOS_ADAPTER_DIR, "command_palette.js")],
   ["image_viewer", join(MACOS_ADAPTER_DIR, "image_viewer.js")],
   ["markdownlint", join(MACOS_ADAPTER_DIR, "markdownlint.js")],
+  ["preferences", join(MACOS_ADAPTER_DIR, "preferences.js")],
   ["right_click_menu", join(MACOS_ADAPTER_DIR, "right_click_menu.js")],
   ["sidebar_enhance", join(MACOS_ADAPTER_DIR, "sidebar_enhance.js")],
   ["window_tab", join(MACOS_ADAPTER_DIR, "window_tab.js")],

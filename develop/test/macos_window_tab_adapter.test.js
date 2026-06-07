@@ -3,7 +3,14 @@ global.BasePlugin = class {
 
 const { describe, it, beforeEach, mock } = require("node:test")
 const assert = require("node:assert")
-const { MacosTabManager } = require("../../plugin/macos/adapters/window_tab.js")
+const { MacosTabManager, resolveMacosTabMoveIndex } = require("../../plugin/macos/adapters/window_tab.js")
+
+const rects = [
+  { left: 0, width: 100 },
+  { left: 100, width: 100 },
+  { left: 200, width: 100 },
+  { left: 300, width: 100 },
+]
 
 describe("macOS window_tab adapter", () => {
   let context
@@ -60,5 +67,13 @@ describe("macOS window_tab adapter", () => {
     assert.deepStrictEqual(manager.tabs[1].scrollAnchor, { cid: "b", offsetTop: 8 })
     assert.strictEqual(manager.tabs[1].scrollRatio, 0.6)
     assert.strictEqual(manager.activeIdx, 1)
+  })
+
+  it("resolves mouse-drag drop positions after removing the dragged tab", () => {
+    assert.strictEqual(resolveMacosTabMoveIndex(rects, 0, 210), 1)
+    assert.strictEqual(resolveMacosTabMoveIndex(rects, 0, 260), 2)
+    assert.strictEqual(resolveMacosTabMoveIndex(rects, 0, 390), 3)
+    assert.strictEqual(resolveMacosTabMoveIndex(rects, 3, 120), 1)
+    assert.strictEqual(resolveMacosTabMoveIndex(rects, 2, -20), 0)
   })
 })

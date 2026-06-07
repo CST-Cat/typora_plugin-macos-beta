@@ -4,6 +4,109 @@ const CommandPalettePlugin = original.plugin
 const PROVIDER_TIMEOUT = 2500
 const RECENT_FILES_LIMIT = 120
 
+const LOCAL_I18N = {
+  en: {
+    "placeholder": "Type ? to see available commands",
+    "help.showCommands": "> Show and Run Commands",
+    "help.goToSymbol": "@ Go to Symbol in Editor",
+    "help.searchRecentFiles": "# Search Recent Files",
+    "help.goToLine": ": Go to Line",
+    "help.help": "? Help",
+    "help.searchOpenTabs": "Search Open Tabs",
+    "command.showInFinder": "Show in Finder",
+    "command.openFileInNewWindow": "Open File In New Window",
+    "command.copyFilePath": "Copy File Path",
+    "command.togglePreferencePanel": "Toggle Preference Panel",
+    "command.togglePinWindow": "Toggle Pin Window",
+    "command.openSettingFolder": "Open Setting Folder",
+    "command.print": "Print",
+    "command.exportHtml": "Export: HTML",
+    "command.exportHtmlPlain": "Export: HTML-plain",
+    "command.exportImage": "Export: Image",
+    "command.exportPdf": "Export: PDF",
+    "command.modeOutlineView": "Mode: Outline View",
+    "command.modeSourceCode": "Mode: Source Code",
+    "command.modeFocus": "Mode: Focus",
+    "command.modeTypewriter": "Mode: Typewriter",
+    "command.modeDebug": "Mode: Debug",
+    "command.theme": "Theme: {{theme}}",
+    "provider.goToLine": "Go to Line",
+    "line.prompt": "Type a line number to navigate",
+    "line.go": "Go to line {{line}}",
+  },
+  "zh-CN": {
+    "placeholder": "输入 ? 查看可用命令",
+    "help.showCommands": "> 显示并运行命令",
+    "help.goToSymbol": "@ 跳转到文档标题",
+    "help.searchRecentFiles": "# 搜索最近文件",
+    "help.goToLine": ": 跳转到行号",
+    "help.help": "? 帮助",
+    "help.searchOpenTabs": "搜索已打开标签页",
+    "command.showInFinder": "在访达中显示",
+    "command.openFileInNewWindow": "在新窗口打开文件",
+    "command.copyFilePath": "复制文件路径",
+    "command.togglePreferencePanel": "切换偏好设置面板",
+    "command.togglePinWindow": "切换窗口置顶",
+    "command.openSettingFolder": "打开配置文件夹",
+    "command.print": "打印",
+    "command.exportHtml": "导出：HTML",
+    "command.exportHtmlPlain": "导出：纯 HTML",
+    "command.exportImage": "导出：图片",
+    "command.exportPdf": "导出：PDF",
+    "command.modeOutlineView": "模式：大纲视图",
+    "command.modeSourceCode": "模式：源码模式",
+    "command.modeFocus": "模式：专注模式",
+    "command.modeTypewriter": "模式：打字机模式",
+    "command.modeDebug": "模式：调试",
+    "command.theme": "主题：{{theme}}",
+    "provider.goToLine": "跳转到行号",
+    "line.prompt": "输入行号进行跳转",
+    "line.go": "跳转到第 {{line}} 行",
+  },
+  "zh-TW": {
+    "placeholder": "輸入 ? 查看可用命令",
+    "help.showCommands": "> 顯示並執行命令",
+    "help.goToSymbol": "@ 跳轉到文件標題",
+    "help.searchRecentFiles": "# 搜尋最近檔案",
+    "help.goToLine": ": 跳轉到行號",
+    "help.help": "? 說明",
+    "help.searchOpenTabs": "搜尋已開啟標籤頁",
+    "command.showInFinder": "在 Finder 中顯示",
+    "command.openFileInNewWindow": "在新視窗開啟檔案",
+    "command.copyFilePath": "複製檔案路徑",
+    "command.togglePreferencePanel": "切換偏好設定面板",
+    "command.togglePinWindow": "切換視窗置頂",
+    "command.openSettingFolder": "開啟設定資料夾",
+    "command.print": "列印",
+    "command.exportHtml": "匯出：HTML",
+    "command.exportHtmlPlain": "匯出：純 HTML",
+    "command.exportImage": "匯出：圖片",
+    "command.exportPdf": "匯出：PDF",
+    "command.modeOutlineView": "模式：大綱視圖",
+    "command.modeSourceCode": "模式：原始碼模式",
+    "command.modeFocus": "模式：專注模式",
+    "command.modeTypewriter": "模式：打字機模式",
+    "command.modeDebug": "模式：除錯",
+    "command.theme": "主題：{{theme}}",
+    "provider.goToLine": "跳轉到行號",
+    "line.prompt": "輸入行號進行跳轉",
+    "line.go": "跳轉到第 {{line}} 行",
+  },
+}
+
+const fillVariables = (text, variables) => {
+  if (!variables || typeof text !== "string") return text
+  return text.replace(/{{\s*(\w+)\s*}}/g, (match, key) => variables[key] ?? match)
+}
+
+const createLocalTranslator = (i18n) => (key, fallback, variables) => {
+  const translated = i18n.t(key, variables)
+  if (translated && translated !== key) return translated
+
+  const local = LOCAL_I18N[i18n.locale]?.[key] ?? LOCAL_I18N.en[key] ?? fallback
+  return fillVariables(local, variables)
+}
+
 const resolveWithTimeout = (producer, fallback, label, timeout = PROVIDER_TIMEOUT) => new Promise(resolve => {
   let done = false
   const timer = setTimeout(() => {
@@ -215,11 +318,12 @@ class MacosCommandPalettePlugin extends CommandPalettePlugin {
   constructor(...args) {
     super(...args)
     const upstreamInit = this.init
+    const localT = createLocalTranslator(this.i18n)
 
     this.html = () =>
       `<div class="plugin-command-palette-overlay plugin-common-hidden">
         <div class="plugin-command-palette-panel">
-          <input id="plugin-command-palette-input" type="text" placeholder="${this.utils.escape(this.i18n.t("placeholder"))}">
+          <input id="plugin-command-palette-input" type="text" placeholder="${this.utils.escape(localT("placeholder", "Type ? to see available commands"))}">
           <div class="plugin-command-palette-results"></div>
         </div>
       </div>`
@@ -229,7 +333,7 @@ class MacosCommandPalettePlugin extends CommandPalettePlugin {
       const providers = buildMacosProviders(this.utils, {
         getAnchor: () => this.anchorNode,
         setInput: input => this.setInput(input),
-        t: (key, variables) => this.i18n.t(key, variables),
+        t: (key, variables) => localT(key, undefined, variables),
       })
       this.service.providers = []
       this.service.registerProviders(...providers)
@@ -269,4 +373,4 @@ class MacosCommandPalettePlugin extends CommandPalettePlugin {
   }
 }
 
-module.exports = { ...original, plugin: MacosCommandPalettePlugin }
+module.exports = { ...original, plugin: MacosCommandPalettePlugin, LOCAL_I18N, createLocalTranslator }
