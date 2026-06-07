@@ -31,7 +31,6 @@ describe("TabManager Test Suite", () => {
         TRIM_FILE_EXT: false,
       },
       onRender: mock.fn(),
-      onBeforeSwitch: mock.fn(),
       onEmpty: mock.fn(),
       onExit: mock.fn(),
     }
@@ -136,14 +135,6 @@ describe("TabManager Test Suite", () => {
       assert.strictEqual(manager.activeIdx, 0)
       manager.switch(99)
       assert.strictEqual(manager.activeIdx, 2)
-    })
-
-    it("should notify before switching away from the current tab", () => {
-      manager.switch(1)
-
-      assert.strictEqual(context.onBeforeSwitch.mock.callCount(), 1)
-      assert.strictEqual(context.onBeforeSwitch.mock.calls[0].arguments[0].path, "/a")
-      assert.strictEqual(context.onBeforeSwitch.mock.calls[0].arguments[1].path, "/b")
     })
 
     it("should switch by path correctly", () => {
@@ -377,19 +368,15 @@ describe("TabManager Test Suite", () => {
     it("should restore session and merge tabs", () => {
       manager.reset([{ path: "/exist.md" }]) // Already exists
       const saveTabs = [
-        { path: "/exist.md", scrollTop: 100, scrollAnchor: { cid: "a", offsetTop: -12 }, scrollRatio: 0.2, active: false },
-        { path: "/restored.md", scrollTop: 50, scrollAnchor: { cid: "b", offsetTop: 8 }, scrollRatio: 0.6, active: true },
+        { path: "/exist.md", scrollTop: 100, active: false },
+        { path: "/restored.md", scrollTop: 50, active: true },
       ]
 
       manager.restoreSession(saveTabs, "root", "root", true)
 
       assert.strictEqual(manager.count, 2)
       assert.strictEqual(manager.tabs[0].scrollTop, 100) // Updated exist tab
-      assert.deepStrictEqual(manager.tabs[0].scrollAnchor, { cid: "a", offsetTop: -12 })
-      assert.strictEqual(manager.tabs[0].scrollRatio, 0.2)
       assert.strictEqual(manager.tabs[1].path, "/restored.md") // Appended new
-      assert.deepStrictEqual(manager.tabs[1].scrollAnchor, { cid: "b", offsetTop: 8 })
-      assert.strictEqual(manager.tabs[1].scrollRatio, 0.6)
       assert.strictEqual(manager.activeIdx, 1) // Switched to active path
     })
 

@@ -9,7 +9,6 @@ class TabManager {
     this.config = context.config
     this.hooks = {
       onRender: context.onRender,
-      onBeforeSwitch: context.onBeforeSwitch,
       onEmpty: context.onEmpty,
       onExit: context.onExit,
     }
@@ -72,7 +71,7 @@ class TabManager {
       if (this._localOpen && this.current) {
         this.current.path = wantOpenPath
       } else {
-        const newTab = { path: wantOpenPath, scrollTop: 0, scrollAnchor: null, scrollRatio: 0 }
+        const newTab = { path: wantOpenPath, scrollTop: 0 }
         if (NEW_TAB_POSITION === "end") this._tabs.push(newTab)
         else if (NEW_TAB_POSITION === "start") this._tabs.unshift(newTab)
         else if (NEW_TAB_POSITION === "right") this._tabs.splice(this._activeIdx + 1, 0, newTab)
@@ -96,11 +95,7 @@ class TabManager {
   }
 
   switch(idx) {
-    const nextIdx = Math.min(Math.max(0, idx), this.maxIdx)
-    if (nextIdx !== this._activeIdx) {
-      this.hooks.onBeforeSwitch?.(this.current, this._tabs[nextIdx])
-    }
-    this._activeIdx = nextIdx
+    this._activeIdx = Math.min(Math.max(0, idx), this.maxIdx)
     this.utils.openFile(this.current?.path, true)
   }
 
@@ -227,9 +222,6 @@ class TabManager {
   }
 
   async checkExist() {
-    if (typeof window !== "undefined" && window.__TP_MACOS__) {
-      return
-    }
     if (this.count === 0) {
       await this.hooks.onEmpty()
       return
@@ -264,12 +256,7 @@ class TabManager {
     if (matchMountFolder && mountFolder !== currentMountFolder) return
 
     const activePath = saveTabs.find(tab => tab.active)?.path
-    this._tabs = saveTabs.map(({ path, scrollTop, scrollAnchor, scrollRatio }) => ({
-      path,
-      scrollTop: scrollTop || 0,
-      scrollAnchor: scrollAnchor || null,
-      scrollRatio: scrollRatio || 0,
-    }))
+    this._tabs = saveTabs.map(({ path, scrollTop }) => ({ path, scrollTop: scrollTop || 0 }))
 
     this._formatShowNames()
 
@@ -316,11 +303,6 @@ class TabManager {
 class WindowTabPlugin extends BasePlugin {
   checkTabsInterval = null
   renderRafManager = this.utils.getRafManager()
-  _pendingScrollRestorePath = null
-  _activeScrollRestoreToken = null
-  _scrollRestoreTimers = []
-  _scrollRestoreRafs = []
-  _ignoreScrollRecordUntil = 0
   manualSaveStorage = this.utils.getStorage(`${this.fixedName}.manual`)
   autoSaveStorage = this.utils.getStorage(`${this.fixedName}.auto`)
   staticActions = this.i18n.fillActions([
@@ -338,11 +320,6 @@ class WindowTabPlugin extends BasePlugin {
         this._renderTabs(wantOpenPath)
       })
     },
-    onBeforeSwitch: (currentTab, nextTab) => {
-      this._recordCurrentScrollTop()
-      this._requestScrollRestore(nextTab?.path)
-      this._switchingByTab = true
-    },
     onEmpty: async () => {
       this._hideTabBar()
       this._stopCheckTabsInterval()
@@ -356,8 +333,7 @@ class WindowTabPlugin extends BasePlugin {
         fileMissingWhenOpen: false, bundleFile: null, zip: null,
       }
       await this.utils.reload()
-      const titleText = document.getElementById("title-text")
-      if (titleText) titleText.innerHTML = "Typora"
+      document.getElementById("title-text").innerHTML = "Typora"
       document.querySelector(".file-library-node.active")?.classList.remove("active")
     },
     onExit: () => this.utils.exitTypora(),
@@ -365,10 +341,8 @@ class WindowTabPlugin extends BasePlugin {
 
   prepare = () => {
     if (window._options.framelessWindow && this.config.HIDE_WINDOW_TITLE_BAR) {
-      const header = document.querySelector("header")
-      const titleBar = document.getElementById("top-titlebar")
-      if (header) header.style.zIndex = "897"
-      if (titleBar) titleBar.style.display = "none"
+      document.querySelector("header").style.zIndex = "897"
+      document.getElementById("top-titlebar").style.display = "none"
     }
     if (this.config.LAST_TAB_CLOSE_ACTION === "blankPage" && this.utils.isBetaVersion) {
       this.config.LAST_TAB_CLOSE_ACTION = "reconfirm"
@@ -399,68 +373,18 @@ class WindowTabPlugin extends BasePlugin {
       newTabButton: document.querySelector("#plugin-window-tab .add-button"),
       windowTab: document.querySelector("#plugin-window-tab"),
     }
-    document.body.classList.toggle("plugin-window-tab-macos", this._isMacosWebKit())
   }
 
   process = () => {
-    const logMacos = (message, data) => {
-      if (!window.__TP_MACOS__?.rpc) return
-      window.__TP_MACOS__.rpc("diagnostic.log", {
-        source: "window_tab",
-        level: "info",
-        message: data === undefined ? message : `${message}: ${data}`,
-      }).catch(this.utils.noop)
-    }
-    const openInitialCurrentFile = () => {
-      if (this.tab.count > 0) return
-      const open = () => {
-        if (this.tab.count > 0) return true
-        const filePath = this.utils.getFilePath()
-        if (!filePath) return false
-        this.tab.open(filePath)
-        logMacos("initial tab opened", filePath)
-        return true
-      }
-      if (open()) return
-      this.utils.waitUntil(open, 100, 5000)
-        .catch(() => logMacos("initial tab skipped", "empty file path"))
-    }
     const handleLifeCycle = () => {
       this._hideTabBar()
-      this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.beforeFileOpen, () => {
-        this._cancelScrollRestore()
-        if (this._switchingByTab) {
-          this._switchingByTab = false
-        } else {
-          this._recordCurrentScrollTop()
-        }
-      })
-      this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.fileOpened, path => {
-        const previousPath = this.tab.current?.path
-        this.tab.open(path)
-        if (path && path !== previousPath) this._requestScrollRestore(path)
-      })
+      this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.fileOpened, path => this.tab.open(path))
       this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.fileContentLoaded, this._scrollContent)
-      this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.toggleSettingPage, hide => {
-        if (this.entities.windowTab) this.entities.windowTab.style.visibility = hide ? "hidden" : "initial"
-      })
-      const updateMacosLayout = this.utils.debounce(() => {
-        this._updateMacosLayout()
-        this._adjustContentTop()
-      }, 80)
-      if (this._isMacosWebKit()) {
-        this._updateMacosLayout()
-        window.addEventListener("resize", updateMacosLayout)
-        this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.afterToggleSidebar, updateMacosLayout)
-        this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.afterSetSidebarWidth, updateMacosLayout)
-      }
+      this.utils.eventHub.addEventListener(this.utils.eventHub.eventType.toggleSettingPage, hide => this.entities.windowTab.style.visibility = hide ? "hidden" : "initial")
 
-      const isHeaderReady = () => this.utils.isBetaVersion ? !!this.entities.header?.getBoundingClientRect().height : true
+      const isHeaderReady = () => this.utils.isBetaVersion ? this.entities.header.getBoundingClientRect().height : true
       const adjustTop = () => setTimeout(() => {
-        if (!this.entities.windowTab) return
-        if (this._isMacosWebKit()) {
-          this._updateMacosLayout()
-        } else if (!this.config.HIDE_WINDOW_TITLE_BAR && this.entities.header) {
+        if (!this.config.HIDE_WINDOW_TITLE_BAR) {
           const { height, top } = this.entities.header.getBoundingClientRect()
           this.entities.windowTab.style.top = `${height + top}px`
         }
@@ -468,23 +392,15 @@ class WindowTabPlugin extends BasePlugin {
         this._adjustContentTop()
       }, 200)
       this.utils.waitUntil(isHeaderReady, 50, 1000).catch(this.utils.noop).finally(adjustTop)
-      openInitialCurrentFile()
     }
     const handleClick = () => {
-      if (!this.entities.newTabButton || !this.entities.tabWrapper) return
       this.entities.newTabButton.addEventListener("click", async ev => {
-        ev.preventDefault()
-        ev.stopPropagation()
-        if (this._isMacosWebKit()) {
-          await this._createMacosNewFile()
-        } else {
-          const { canceled, filePaths } = await JSBridge.invoke("dialog.showOpenDialog", {
-            properties: ["openFile"],
-            filters: [{ name: "Markdown Files", extensions: ["md", "markdown", "mdown", "mkd", "mdx"] }],
-          })
-          if (!canceled && filePaths?.length > 0) {
-            this.utils.openFile(filePaths[0], true)
-          }
+        const { canceled, filePaths } = await JSBridge.invoke("dialog.showOpenDialog", {
+          properties: ["openFile"],
+          filters: [{ name: "Markdown Files", extensions: ["md", "markdown", "mdown", "mkd", "mdx"] }],
+        })
+        if (!canceled && filePaths?.length > 0) {
+          this.utils.openFile(filePaths[0], true)
         }
       })
 
@@ -505,12 +421,10 @@ class WindowTabPlugin extends BasePlugin {
       })
     }
     const handleScroll = () => {
-      const scrollEl = this._getScrollElement()
-      if (!scrollEl) return
-      scrollEl.addEventListener("scroll", this.utils.debounce(this._recordCurrentScrollTop, 100), { passive: true })
-      const cancelUserRestore = () => this._cancelPendingScrollRestore()
-      scrollEl.addEventListener("wheel", cancelUserRestore, { passive: true })
-      scrollEl.addEventListener("touchstart", cancelUserRestore, { passive: true })
+      this.entities.content.addEventListener("scroll", this.utils.debounce(() => {
+        const cur = this.tab.current
+        if (cur) cur.scrollTop = this.entities.content.scrollTop
+      }), 100)
     }
     const handleDrag = () => {
       const newWindowIfNeed = (offsetY, el) => {
@@ -707,7 +621,6 @@ class WindowTabPlugin extends BasePlugin {
       }, { passive: true })
     }
     const handleMiddleClick = () => {
-      if (!this.entities.tabWrapper) return
       this.entities.tabWrapper.addEventListener("mousedown", ev => {
         if (ev.button === 1) {
           const idx = parseInt(ev.target.closest(".tab-container")?.dataset.idx)
@@ -721,7 +634,6 @@ class WindowTabPlugin extends BasePlugin {
       })
     }
     const handleContextMenu = () => {
-      if (!this.entities.tabWrapper) return
       let tabIdx = -1
       const getMenuItems = (ev) => {
         const tabEl = ev.target.closest(".tab-container")
@@ -759,12 +671,12 @@ class WindowTabPlugin extends BasePlugin {
           bridge.callHandler("quickOpen.stopQuery")
         }
       }
-      document.querySelector(".typora-quick-open-list")?.addEventListener("mousedown", ev => {
+      document.querySelector(".typora-quick-open-list").addEventListener("mousedown", ev => {
         const target = ev.target.closest(".typora-quick-open-item")
         // Changed the original click behavior to ctrl+click.
         if (target && !this.utils.metaKeyPressed(ev)) openQuickTab(target, ev)
       }, true)
-      document.querySelector("#typora-quick-open-input > input")?.addEventListener("keydown", ev => {
+      document.querySelector("#typora-quick-open-input > input").addEventListener("keydown", ev => {
         if (ev.key === "Enter") {
           const el = document.querySelector(".typora-quick-open-item.active")
           if (el) openQuickTab(el, ev)
@@ -816,218 +728,6 @@ class WindowTabPlugin extends BasePlugin {
     if (this.config.CONTEXT_MENU.length) handleContextMenu()
   }
 
-  _isMacosWebKit = () => typeof window !== "undefined" && !!window.__TP_MACOS__
-
-  _createMacosNewFile = async () => {
-    const dispatchNativeClick = target => {
-      if (!target) return false
-      for (const type of ["mousedown", "mouseup", "click"]) {
-        target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }))
-      }
-      return true
-    }
-
-    const nativeNewFileButton = document.querySelector("#sidebar-new-file-btn")
-    if (dispatchNativeClick(nativeNewFileButton)) return
-
-    const menuNewFileAction = document.querySelector('[data-action="new_file"]')
-    if (dispatchNativeClick(menuNewFileAction)) return
-
-    try {
-      if (window.JSBridge?.invoke) {
-        await window.JSBridge.invoke("controller.runCommand", "new_file")
-      } else if (window.bridge?.callHandler) {
-        await new Promise(resolve => window.bridge.callHandler("controller.runCommand", "new_file", resolve))
-      }
-    } catch (err) {
-      window.__TP_MACOS__?.rpc?.("diagnostic.log", {
-        source: "window_tab",
-        level: "warn",
-        message: `new file action failed: ${err?.message || err}`,
-      }).catch(this.utils.noop)
-      throw err
-    }
-  }
-
-  _getMacosTitlebarBottom = () => {
-    const titleText = document.getElementById("title-text")
-    const candidates = [
-      document.getElementById("top-titlebar"),
-      this.entities.header,
-      titleText?.closest("#top-titlebar"),
-      titleText?.parentElement,
-    ].filter(Boolean)
-    const bottoms = candidates
-      .map(el => {
-        const style = window.getComputedStyle(el)
-        if (style.display === "none" || style.visibility === "hidden") return 0
-        const rect = el.getBoundingClientRect()
-        return rect.width > 0 && rect.height > 0 ? rect.top + rect.height : 0
-      })
-      .filter(bottom => bottom > 0 && bottom < 120)
-    return Math.ceil(Math.max(40, ...bottoms))
-  }
-
-  _updateMacosLayout = () => {
-    if (!this._isMacosWebKit() || !this.entities.windowTab) return
-    const sidebar = document.querySelector("#typora-sidebar")
-    const sidebarRect = sidebar?.getBoundingClientRect()
-    const sidebarStyle = sidebar ? window.getComputedStyle(sidebar) : null
-    const sidebarVisible = sidebarRect
-      && sidebarRect.width > 0
-      && sidebarStyle?.display !== "none"
-      && sidebarStyle?.visibility !== "hidden"
-    const sidebarWidth = sidebarVisible ? Math.ceil(sidebarRect.width) : 0
-    const tabHeight = Math.ceil(this.entities.windowTab.getBoundingClientRect().height || 40)
-    const titlebarBottom = this._getMacosTitlebarBottom()
-    this.entities.windowTab.style.removeProperty("top")
-    document.documentElement.style.setProperty("--plugin-window-tab-left", `${sidebarWidth}px`)
-    document.documentElement.style.setProperty("--plugin-window-tab-traffic-left", sidebarWidth ? "0px" : "92px")
-    document.documentElement.style.setProperty("--plugin-window-tab-top", `${titlebarBottom}px`)
-    document.documentElement.style.setProperty("--plugin-window-tab-height", `${tabHeight}px`)
-  }
-
-  _getScrollElement = () => this.entities?.content || document.querySelector("content") || document.scrollingElement || document.documentElement
-
-  _getScrollTop = () => this._getScrollElement()?.scrollTop || 0
-
-  _setScrollTop = scrollTop => {
-    const scrollEl = this._getScrollElement()
-    if (!scrollEl) return
-    const maxScrollTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight)
-    scrollEl.scrollTop = Math.min(Math.max(0, scrollTop || 0), maxScrollTop)
-  }
-
-  _getScrollRatio = () => {
-    const scrollEl = this._getScrollElement()
-    if (!scrollEl) return 0
-    const maxScrollTop = scrollEl.scrollHeight - scrollEl.clientHeight
-    return maxScrollTop > 0 ? this._getScrollTop() / maxScrollTop : 0
-  }
-
-  _cancelScrollRestore = () => {
-    for (const timer of this._scrollRestoreTimers) clearTimeout(timer)
-    for (const raf of this._scrollRestoreRafs) cancelAnimationFrame(raf)
-    this._scrollRestoreTimers = []
-    this._scrollRestoreRafs = []
-    this._activeScrollRestoreToken = null
-  }
-
-  _cancelPendingScrollRestore = () => {
-    this._pendingScrollRestorePath = null
-    this._cancelScrollRestore()
-  }
-
-  _requestScrollRestore = filepath => {
-    if (filepath) this._pendingScrollRestorePath = filepath
-  }
-
-  _consumeScrollRestore = filepath => {
-    if (this._pendingScrollRestorePath !== filepath) return false
-    this._pendingScrollRestorePath = null
-    return true
-  }
-
-  _recordCurrentScrollTop = () => {
-    if (typeof performance !== "undefined" && performance.now() < this._ignoreScrollRecordUntil) return
-    const cur = this.tab.current
-    if (!cur) return
-    cur.scrollTop = this._getScrollTop()
-    cur.scrollRatio = this._getScrollRatio()
-    cur.scrollAnchor = this._captureScrollAnchor()
-  }
-
-  _getScrollViewportRect = scrollEl => {
-    if (!scrollEl || scrollEl === document.scrollingElement || scrollEl === document.documentElement || scrollEl === document.body) {
-      return { top: 0, bottom: window.innerHeight }
-    }
-    const rect = scrollEl.getBoundingClientRect()
-    return { top: rect.top, bottom: rect.bottom }
-  }
-
-  _getScrollAnchorRoot = () => this.utils.entities.eWrite || document.querySelector("#write")
-
-  _findAnchorElementByCid = cid => {
-    const root = this._getScrollAnchorRoot()
-    if (!root || !cid) return null
-    return Array.from(root.querySelectorAll("[cid]")).find(el => el.getAttribute("cid") === cid)
-  }
-
-  _captureScrollAnchor = () => {
-    const scrollEl = this._getScrollElement()
-    const root = this._getScrollAnchorRoot()
-    if (!scrollEl || !root) return null
-
-    const viewport = this._getScrollViewportRect(scrollEl)
-    const viewportTop = viewport.top + 4
-    const candidates = Array.from(root.querySelectorAll("[cid]"))
-    const anchor = candidates.find(el => {
-      const rect = el.getBoundingClientRect()
-      return rect.height > 0 && rect.bottom >= viewportTop && rect.top <= viewport.bottom
-    })
-    if (!anchor) return null
-
-    const cid = anchor.getAttribute("cid")
-    if (!cid) return null
-
-    const rect = anchor.getBoundingClientRect()
-    return {
-      cid,
-      offsetTop: Math.round(rect.top - viewport.top),
-    }
-  }
-
-  _restoreTabScrollPosition = tab => {
-    const scrollEl = this._getScrollElement()
-    if (!scrollEl || !tab) return
-
-    const anchor = tab.scrollAnchor
-    const anchorEl = anchor?.cid && this._findAnchorElementByCid(anchor.cid)
-    if (anchorEl) {
-      const viewport = this._getScrollViewportRect(scrollEl)
-      const rect = anchorEl.getBoundingClientRect()
-      this._setScrollTop(this._getScrollTop() + rect.top - viewport.top - (anchor.offsetTop || 0))
-      return
-    }
-
-    if (typeof tab.scrollRatio === "number" && tab.scrollRatio > 0) {
-      const maxScrollTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight)
-      this._setScrollTop(maxScrollTop * tab.scrollRatio)
-      return
-    }
-
-    this._setScrollTop(tab.scrollTop || 0)
-  }
-
-  _scheduleScrollRestore = (filepath, tab) => {
-    this._cancelScrollRestore()
-    const token = Symbol(filepath)
-    this._activeScrollRestoreToken = token
-
-    const applyScroll = () => {
-      if (this._activeScrollRestoreToken !== token || this.utils.getFilePath() !== filepath) return
-      if (typeof performance !== "undefined") this._ignoreScrollRecordUntil = performance.now() + 200
-      this._restoreTabScrollPosition(tab)
-    }
-
-    if (typeof requestAnimationFrame === "function") {
-      const raf = requestAnimationFrame(() => {
-        const secondRaf = requestAnimationFrame(applyScroll)
-        this._scrollRestoreRafs.push(secondRaf)
-      })
-      this._scrollRestoreRafs.push(raf)
-    } else {
-      applyScroll()
-    }
-
-    for (const delay of [80, 250, 600]) {
-      this._scrollRestoreTimers.push(setTimeout(applyScroll, delay))
-    }
-    this._scrollRestoreTimers.push(setTimeout(() => {
-      if (this._activeScrollRestoreToken === token) this._activeScrollRestoreToken = null
-    }, 700))
-  }
-
   getDynamicActions = () => this.i18n.fillActions([
     { act_value: "open_save_tabs", act_hidden: !this.manualSaveStorage.exist() },
     { act_value: "toggle_file_ext", act_state: this.config.TRIM_FILE_EXT },
@@ -1057,36 +757,34 @@ class WindowTabPlugin extends BasePlugin {
   }
 
   _hideTabBar = () => {
-    if (this.entities.windowTab && this.utils.isShown(this.entities.windowTab) && this.tab.count === 0) {
+    if (this.utils.isShown(this.entities.windowTab) && this.tab.count === 0) {
       this.utils.hide(this.entities.windowTab)
       this._resetContentTop()
     }
   }
 
   _showTabBar = () => {
-    if (this.entities.windowTab && this.utils.isHidden(this.entities.windowTab)) {
+    if (this.utils.isHidden(this.entities.windowTab)) {
       this.utils.show(this.entities.windowTab)
       this._adjustContentTop()
     }
   }
 
   _adjustContentTop = () => {
-    if (!this.entities.windowTab || !this.entities.content || !this.entities.source) return
     const { height, top } = this.entities.windowTab.getBoundingClientRect()
     if (height + top === 0) {  // Equal to 0, indicating that there are no tabs.
       this._resetContentTop()
     } else {
-      const headerRect = document.querySelector("header")?.getBoundingClientRect()
-      const headerBottom = headerRect ? headerRect.height + headerRect.top : 0
-      const t = Math.max(top + height, headerBottom) + "px"
+      const { height: headerHeight, top: headerTop } = document.querySelector("header").getBoundingClientRect()
+      const t = Math.max(top + height, headerHeight + headerTop) + "px"
       this.entities.content.style.top = t
       this.entities.source.style.top = t
     }
   }
 
   _resetContentTop = () => {
-    this.entities.content?.style.removeProperty("top")
-    this.entities.source?.style.removeProperty("top")
+    this.entities.content.style.removeProperty("top")
+    this.entities.source.style.removeProperty("top")
   }
 
   _startCheckTabsInterval = () => {
@@ -1104,7 +802,6 @@ class WindowTabPlugin extends BasePlugin {
   }
 
   _insertTabDiv = (filePath, showName, idx) => {
-    if (!this.entities.tabWrapper) return
     const hint = this.config.SHOW_FULL_PATH_ON_HOVER ? `ty-hint="${filePath}"` : ""
     const btn = this.config.SHOW_TAB_CLOSE_BUTTON ? `<div class="close-button"><div class="close-icon"></div></div>` : ""
     this.entities.tabWrapper.insertAdjacentHTML("beforeend",
@@ -1126,12 +823,42 @@ class WindowTabPlugin extends BasePlugin {
   _scrollContent = filepath => {
     const activeTab = this.tab.tabs.find(e => e.path === filepath)
     if (!activeTab) return
-    if (!this._consumeScrollRestore(filepath)) return
-    this._scheduleScrollRestore(filepath, activeTab)
+
+    const targetScrollTop = activeTab.scrollTop
+    const contentEl = this.entities.content
+
+    if (this._contentObserver) {
+      this._contentObserver.disconnect()
+      clearTimeout(this._scrollFallbackTimer)
+    }
+
+    const finalizeScroll = () => {
+      if (this._contentObserver) {
+        this._contentObserver.disconnect()
+        this._contentObserver = null
+      }
+      if (this.utils.getFilePath() === filepath) {
+        contentEl.scrollTop = targetScrollTop
+      }
+    }
+
+    this._scrollFallbackTimer = setTimeout(finalizeScroll, 2000)
+    const debouncedFinalize = this.utils.debounce(() => {
+      clearTimeout(this._scrollFallbackTimer)
+      finalizeScroll()
+    }, 100)
+
+    this._contentObserver = new ResizeObserver(() => {
+      if (this.utils.getFilePath() !== filepath) {
+        this._contentObserver.disconnect()
+        return
+      }
+      debouncedFinalize()
+    })
+    this._contentObserver.observe(contentEl.firstElementChild || contentEl)
   }
 
   _renderTabs = wantOpenPath => {
-    if (!this.entities.tabWrapper) return
     let currentTabEl = this.entities.tabWrapper.firstElementChild
 
     for (let idx = 0; idx < this.tab.tabs.length; idx++) {
@@ -1179,22 +906,15 @@ class WindowTabPlugin extends BasePlugin {
   showInFinder = idx => this.utils.showInFinder(this.tab.getTabPathByIdx(idx))
   openInNewWindow = idx => this.openFileNewWindow(this.tab.getTabPathByIdx(idx), false)
 
-  saveTabs = (storage) => {
-    this._recordCurrentScrollTop()
-    storage.set({
-      mount_folder: this.utils.getMountFolder(),
-      save_tabs: this.tab.tabs.map((tab, idx) => ({
-        idx, path: tab.path, scrollTop: tab.scrollTop, active: idx === this.tab.activeIdx,
-        scrollAnchor: tab.scrollAnchor || null,
-        scrollRatio: tab.scrollRatio || 0,
-      })),
-    })
-  }
+  saveTabs = (storage) => storage.set({
+    mount_folder: this.utils.getMountFolder(),
+    save_tabs: this.tab.tabs.map((tab, idx) => ({
+      idx, path: tab.path, scrollTop: tab.scrollTop, active: idx === this.tab.activeIdx,
+    })),
+  })
 
   openSaveTabs = (storage, matchMountFolder = false) => {
     const { save_tabs, mount_folder } = storage.get() || {}
-    const activePath = save_tabs?.find(tab => tab.active)?.path || save_tabs?.[0]?.path
-    this._requestScrollRestore(activePath)
     this.tab.restoreSession(save_tabs, mount_folder, this.utils.getMountFolder(), matchMountFolder)
   }
 }
