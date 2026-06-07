@@ -31,57 +31,25 @@ class MarpPlugin extends BasePlugin {
   }
 
   create = ($wrap, content) => {
-    if (!this.marp) {
-      throw new Error("Marp core is not initialized.")
-    }
-
     const { html, css } = this.marp.render(content)
-    const host = $wrap[0]
-    if (typeof host.attachShadow === "function") {
-      const shadowRoot = host.shadowRoot || host.attachShadow({ mode: "open" }) // Use shadowDOM to isolate styles
-      shadowRoot.innerHTML = `<style>${css}</style>` + html
-      return shadowRoot
-    }
-
-    host.innerHTML = `<style>${css}</style>` + html
-    return host
+    const shadowRoot = $wrap[0].shadowRoot || $wrap[0].attachShadow({ mode: "open" }) // Use shadowDOM to isolate styles
+    shadowRoot.innerHTML = `<style>${css}</style>` + html
+    return shadowRoot
   }
 
-  destroy = root => {
-    if (root) root.innerHTML = ""
-  }
+  destroy = shadowRoot => shadowRoot.innerHTML = ""
 
   getVersion = () => "marp-core@4.2.0"
 
   lazyLoad = () => {
-    this._patchMathJaxLoader()
     const { Marp } = require("./marp-core.min.js")
     this.Marp = Marp
     this.marp = new Marp(this.config.MARP_CORE_OPTIONS).use(this._marpAbsoluteImagePath())
-    if (!this.marp || typeof this.marp.render !== "function") {
-      throw new Error("Failed to initialize Marp core.")
-    }
-  }
-
-  _patchMathJaxLoader = () => {
-    const mathJax = typeof globalThis !== "undefined" ? globalThis.MathJax : null
-    if (!mathJax?.loader || typeof mathJax.loader.preLoad === "function") return
-    try {
-      mathJax.loader.preLoad = () => {}
-    } catch {
-      globalThis.MathJax = {
-        ...mathJax,
-        loader: {
-          ...mathJax.loader,
-          preLoad: () => {},
-        },
-      }
-    }
   }
 
   _marpAbsoluteImagePath = () => {
     const toAbsPath = (url) => {
-      const decodedURL = this._safeDecodeURIComponent(url)
+      const decodedURL = decodeURIComponent(url)
       const dir = this.utils.getLocalRootUrl()
       const absPath = (this.utils.isNetworkImage(decodedURL) || this.utils.isSpecialImage(decodedURL))
         ? decodedURL
@@ -107,14 +75,6 @@ class MarpPlugin extends BasePlugin {
         }
         return originalImageRule ? originalImageRule(tokens, idx, options, env, self) : self.renderToken(tokens, idx, options)
       }
-    }
-  }
-
-  _safeDecodeURIComponent = (url) => {
-    try {
-      return decodeURIComponent(url)
-    } catch {
-      return url
     }
   }
 }

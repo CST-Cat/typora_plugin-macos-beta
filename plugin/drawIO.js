@@ -1,7 +1,7 @@
 class DrawIOPlugin extends BasePlugin {
   INTERACTION_TYPE = {
     default: {},
-    showOnly: { highlight: "#0000ff", nav: false, edit: null, editable: false, lightbox: false },
+    showOnly: { highlight: "#0000ff", nav: false, resize: false, edit: null, editable: false, lightbox: false, zoom: "1", toolbar: null, "toolbar-nohide": true },
     clickable: { highlight: "#0000ff", nav: false, resize: true, edit: null, editable: false, toolbar: null, "toolbar-nohide": true },
     showToolbar: {
       highlight: "#0000ff", nav: true, resize: true, edit: null, editable: true, lightbox: false,
@@ -10,10 +10,6 @@ class DrawIOPlugin extends BasePlugin {
   }
   _memorizedFetch = this.utils.memoizeLimited(async url => {
     const resp = await this.utils.fetch(url, { timeout: this.config.SERVER_TIMEOUT, proxy: this.config.PROXY })
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => "")
-      throw new Error(`${resp.status} ${resp.statusText}\n${text}`)
-    }
     return resp.text()
   }, this.config.CACHED_URL_COUNT)
 
@@ -54,9 +50,6 @@ class DrawIOPlugin extends BasePlugin {
 
   create = async ($wrap, content, meta) => {
     const graphConfig = this.utils.safeEval(content)
-    if (!graphConfig || typeof graphConfig !== "object") {
-      throw new Error(this.i18n.t("error.missingSource"))
-    }
     if (!graphConfig.source && !graphConfig.xml) {
       throw new Error(this.i18n.t("error.missingSource"))
     }
@@ -77,91 +70,42 @@ class DrawIOPlugin extends BasePlugin {
     }
 
     const presetConfig = this.INTERACTION_TYPE[meta.interaction]
-    const mxGraphData = this._compactGraphConfig({ ...presetConfig, ...graphConfig })
+    const mxGraphData = { ...presetConfig, ...graphConfig }
     return this._render($wrap[0], mxGraphData)
   }
-
-  _compactGraphConfig = graphConfig => Object.fromEntries(
-    Object.entries(graphConfig).filter(([, value]) => value !== null && value !== undefined),
-  )
 
   _getResource = async (source, onRemote, onLocal) => {
     const isNetwork = this.utils.isNetworkURI(source)
     try {
       const fetchFn = isNetwork ? onRemote : onLocal
-      return await fetchFn(source)
+      return fetchFn(source)
     } catch (e) {
       const msg = this.i18n.t(isNetwork ? "error.getFileFailedFromNetwork" : "error.getFileFailedFromLocal")
       throw new Error(`${msg}: ${source}\n\n${e}`)
     }
   }
 
-  _render = async (container, mxGraphData) => {
-    this._assertGraphViewer()
+  _refresh = this.utils.debounce(() => window.GraphViewer.processElements(), 100)
+
+  _render = (container, mxGraphData) => {
     const jsonStr = JSON.stringify(mxGraphData)
     const escaped = this.utils.escape(jsonStr)
     container.innerHTML = `<div class="mxgraph" style="max-width:100%; margin: 26px auto 0;" data-mxgraph="${escaped}"></div>`
-    await this.utils.sleep(0)
-    const graph = container.querySelector(".mxgraph")
-    try {
-      window.GraphViewer.createViewerForElement(graph)
-    } catch (error) {
-      throw new Error(`Draw.io viewer failed: ${error.message || error}\n${error.stack || ""}`)
-    }
-    await this.utils.sleep(50)
-    this._assertRendered(container)
+    this._refresh()
     return container
-  }
-
-  _assertGraphViewer = () => {
-    if (!window.GraphViewer || typeof window.GraphViewer.processElements !== "function") {
-      throw new Error("Draw.io viewer is not loaded. Check drawIO.RESOURCE_URI.")
-    }
-  }
-
-  _assertRendered = (container) => {
-    const message = container.textContent?.trim()
-    if (message === "Type error") {
-      throw new Error("Draw.io viewer failed with Type error. Check the graphConfig XML/source format.")
-    }
   }
 
   lazyLoad = async () => {
     const from = this.config.RESOURCE_URI
     const path = this.utils.isNetworkURI(from) ? from : `file:///${this.utils.Package.Path.resolve(from)}`
     await $.getScript(path)
-    this._assertGraphViewer()
-    this._patchSanitizer()
     window.GraphViewer.prototype.toolbarZIndex = 7
-  }
-
-  _patchSanitizer = () => {
-    const graph = window.Graph
-    if (!graph || graph.__typoraPluginSanitizerPatched || typeof graph.domPurify !== "function") return
-
-    graph.domPurify = (value, inPlace) => {
-      return this._fallbackSanitizeHtml(value, inPlace)
-    }
-    graph.__typoraPluginSanitizerPatched = true
-  }
-
-  _fallbackSanitizeHtml = value => {
-    if (value?.nodeType) {
-      return value
-    }
-    if (typeof value === "string") {
-      return this.utils.escape(value).replace(/\r?\n/g, "<br>")
-    }
-    if (value?.textContent) {
-      return this.utils.escape(value.textContent).replace(/\r?\n/g, "<br>")
-    }
-    return ""
   }
 
   beforeExportToHTML = (preview, instance) => {
     const graph = preview.querySelector(".mxgraph")
+    this._fixDiagramForExport(graph, graph.querySelector("svg"))
     if (graph) {
-      this._fixDiagramForExport(graph, graph.querySelector("svg"))
       graph.removeAttribute("data-mxgraph")
       graph.querySelectorAll(":scope > *:not(svg)").forEach(el => el.remove())
     }

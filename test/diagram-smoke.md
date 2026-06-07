@@ -77,7 +77,7 @@ activate Parser
 Parser -> Plant : render(content, cid)
 activate Plant
 Plant -> Plant : deflateRaw + encode64
-Plant -> Server : GET /svg/ENCODED_TEXT
+Plant -> Server : GET /svg/<encoded>
 activate Server
 Server --> Plant : SVG response
 deactivate Server
@@ -111,18 +111,101 @@ deactivate Parser
 ---
 theme: gaia
 paginate: true
-backgroundColor: #FFFFFF
+backgroundColor: #ffffff
+color: #1f2937
+header: macOS diagram smoke
+footer: DrawIO / PlantUML / Marp
+style: |
+  section {
+    box-sizing: border-box;
+    padding: 64px 84px;
+    font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+    overflow: hidden;
+  }
+  .columns {
+    display: grid;
+    grid-template-columns: 52% 40%;
+    gap: 4%;
+    align-items: start;
+  }
+  .badge {
+    display: inline-block;
+    margin-top: 32px;
+    padding: 10px 20px;
+    border-radius: 999px;
+    background: #e8f1ff;
+    color: #1d4ed8;
+    font-size: 18px;
+    font-weight: 700;
+  }
+  table {
+    width: 100%;
+    table-layout: fixed;
+    font-size: 18px;
+  }
+  th,
+  td {
+    overflow-wrap: anywhere;
+  }
 ---
 
-# Typora Plugin Display
+<!-- _class: lead -->
 
-macOS smoke sample
+# Marp Render Smoke
+
+macOS WebKit + Shadow DOM
+
+<span class="badge">revision: 2026-06-07</span>
 
 ---
 
-## Checklist
+## Rendering Path
 
-- test.md titles
-- fixedName mapping
-- JS entry path
+<div class="columns">
+
+<div>
+
+1. Typora sees `marp`
+2. Plugin loads `marp-core`
+3. Markdown becomes slide DOM
+4. CSS is isolated in shadow root
+
+</div>
+
+<div>
+
+| Layer | Signal |
+|---|---|
+| Bundle | loaded |
+| MathJax patch | ready |
+| Images | absolute path |
+| Shadow DOM | active |
+
+</div>
+
+</div>
+
+---
+
+<!-- _class: invert -->
+
+## Visual Check
+
+> If this page is visible, Marp is not showing raw Markdown.
+
+- dark slide
+- quote block
+- numbered page footer
+- custom CSS
+
+---
+
+## Regression Checklist
+
+- [x] `marp-core` initialized
+- [x] two or more slides rendered
+- [x] CSS applied
+- [x] content updates after editing
+
+**Expected:** four distinct slides, not one plain code block.
 ```

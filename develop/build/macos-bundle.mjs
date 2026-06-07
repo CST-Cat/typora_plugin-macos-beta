@@ -12,6 +12,8 @@ const OUTFILE = join(MACOS_DIR, "entry.bundle.js")
 const ENTRY = join(MACOS_DIR, "bundle-entry.js")
 const SETTINGS = join(PLUGIN_DIR, "global/settings/settings.default.toml")
 const SHIMS = join(MACOS_DIR, "shared-shims.js")
+const DRAWIO_ENTRY = join(PLUGIN_DIR, "drawIO.js")
+const MARP_ENTRY = join(PLUGIN_DIR, "marp/index.js")
 
 const SHIM_MODULES = new Set([
   "buffer",
@@ -126,7 +128,14 @@ function discoverResourceModules() {
 
 function createRegistryModule() {
   const entries = [...discoverBasePlugins(), ...discoverResourceModules()]
-    .map(([name, file]) => `  ${JSON.stringify(name)}: () => require(${JSON.stringify(file)}),`)
+    .map(([name, file]) => {
+      const modulePath = name === "drawIO"
+        ? "macos-drawio-adapter"
+        : name === "marp"
+          ? "macos-marp-adapter"
+          : file
+      return `  ${JSON.stringify(name)}: () => require(${JSON.stringify(modulePath)}),`
+    })
     .join("\n")
   return `module.exports = {\n${entries}\n}\n`
 }
@@ -156,6 +165,16 @@ function macosBuildPlugin() {
         namespace: "macos-virtual",
       }))
 
+      builder.onResolve({ filter: /^macos-drawio-adapter$/ }, () => ({
+        path: "macos-drawio-adapter",
+        namespace: "macos-virtual",
+      }))
+
+      builder.onResolve({ filter: /^macos-marp-adapter$/ }, () => ({
+        path: "macos-marp-adapter",
+        namespace: "macos-virtual",
+      }))
+
       builder.onResolve({ filter: /^zlib$/ }, () => ({
         path: "zlib",
         namespace: "macos-zlib",
@@ -173,6 +192,271 @@ function macosBuildPlugin() {
 
       builder.onLoad({ filter: /^macos-plugin-registry$/, namespace: "macos-virtual" }, () => ({
         contents: createRegistryModule(),
+        loader: "js",
+        resolveDir: ROOT,
+      }))
+
+      builder.onLoad({ filter: /^macos-drawio-adapter$/, namespace: "macos-virtual" }, () => ({
+        contents: `
+          const original = require(${JSON.stringify(DRAWIO_ENTRY)})
+          const DrawIOPlugin = original.plugin
+
+          const compactGraphConfig = graphConfig => Object.fromEntries(
+            Object.entries(graphConfig).filter(([, value]) => value !== null && value !== undefined),
+          )
+
+          const assertGraphViewer = () => {
+            if (!window.GraphViewer || typeof window.GraphViewer.processElements !== "function") {
+              throw new Error("Draw.io viewer is not loaded. Check drawIO.RESOURCE_URI.")
+            }
+          }
+
+          const fallbackSanitizeHtml = (utils, value) => {
+            if (value?.nodeType) return value
+            if (typeof value === "string") return utils.escape(value).replace(/\\r?\\n/g, "<br>")
+            if (value?.textContent) return utils.escape(value.textContent).replace(/\\r?\\n/g, "<br>")
+            return ""
+          }
+
+          const patchSanitizer = (utils) => {
+            const graph = window.Graph
+            if (!graph || graph.__typoraPluginMacosSanitizerPatched || typeof graph.domPurify !== "function") return
+
+            graph.domPurify = (value, inPlace) => fallbackSanitizeHtml(utils, value, inPlace)
+            graph.__typoraPluginMacosSanitizerPatched = true
+          }
+
+          const createRenderer = plugin => async (container, mxGraphData) => {
+            assertGraphViewer()
+            const jsonStr = JSON.stringify(compactGraphConfig(mxGraphData))
+            const escaped = plugin.utils.escape(jsonStr)
+            container.innerHTML = \`<div class="mxgraph" style="max-width:100%; margin: 26px auto 0;" data-mxgraph="\${escaped}"></div>\`
+            await plugin.utils.sleep(0)
+            const graph = container.querySelector(".mxgraph")
+            try {
+              if (typeof window.GraphViewer.createViewerForElement === "function") {
+                window.GraphViewer.createViewerForElement(graph)
+              } else {
+                window.GraphViewer.processElements()
+              }
+            } catch (error) {
+              throw new Error(\`Draw.io viewer failed: \${error.message || error}\\n\${error.stack || ""}\`)
+            }
+            await plugin.utils.sleep(50)
+            if (container.textContent?.trim() === "Type error") {
+              throw new Error("Draw.io viewer failed with Type error. Check the graphConfig XML/source format.")
+            }
+            return container
+          }
+
+          class MacosDrawIOPlugin extends DrawIOPlugin {
+            constructor(...args) {
+              super(...args)
+              const originalLazyLoad = this.lazyLoad
+              this.INTERACTION_TYPE = {
+                ...this.INTERACTION_TYPE,
+                showOnly: { highlight: "#0000ff", nav: false, edit: null, editable: false, lightbox: false },
+              }
+              this._render = createRenderer(this)
+              this.lazyLoad = async () => {
+                await originalLazyLoad()
+                assertGraphViewer()
+                patchSanitizer(this.utils)
+                window.GraphViewer.prototype.toolbarZIndex = 7
+              }
+            }
+          }
+
+          module.exports = { ...original, plugin: MacosDrawIOPlugin }
+        `,
+        loader: "js",
+        resolveDir: ROOT,
+      }))
+
+      builder.onLoad({ filter: /^macos-marp-adapter$/, namespace: "macos-virtual" }, () => ({
+        contents: `
+          const original = require(${JSON.stringify(MARP_ENTRY)})
+          const MarpPlugin = original.plugin
+
+          const RESPONSIVE_STYLE = \`
+            :host {
+              display: block;
+              width: 100%;
+              max-width: 100%;
+              overflow-x: hidden;
+            }
+
+            .marpit {
+              display: grid;
+              justify-items: center;
+              gap: 1.25rem;
+              width: 100%;
+              max-width: 100%;
+              overflow-x: hidden;
+            }
+
+            .marpit > svg[data-marpit-svg] {
+              display: block;
+              width: 100% !important;
+              max-width: 100% !important;
+              height: auto !important;
+              margin: 0 auto !important;
+              box-sizing: border-box;
+              background: #fff;
+              border: 1px solid rgba(31, 41, 55, 0.16);
+              border-radius: 4px;
+              box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+            }
+          \`
+
+          const installResponsiveStyle = (root) => {
+            if (!root || typeof root.querySelector !== "function") return
+            if (root.querySelector("style[data-typora-plugin-macos-marp-responsive]")) return
+            const style = document.createElement("style")
+            style.dataset.typoraPluginMacosMarpResponsive = "true"
+            style.textContent = RESPONSIVE_STYLE
+            root.prepend(style)
+          }
+
+          const prepareHost = (host) => {
+            if (!host?.style) return
+            host.style.width = "100%"
+            host.style.maxWidth = "100%"
+            host.style.overflowX = "hidden"
+          }
+
+          const fitSlides = (host, root) => {
+            const update = () => {
+              if (!root || typeof root.querySelectorAll !== "function") return
+              for (const svg of root.querySelectorAll("svg[data-marpit-svg]")) {
+                const viewBox = svg.viewBox?.baseVal
+                const rect = svg.getBoundingClientRect()
+                if (!viewBox?.width || !viewBox?.height || !rect.width) continue
+
+                const sections = [...svg.querySelectorAll("foreignObject > section")]
+                const marpPolyfillActive = sections.some(section => section.style.transform?.includes("matrix("))
+                if (marpPolyfillActive) continue
+
+                const scale = rect.width / viewBox.width
+                svg.style.height = \`\${viewBox.height * scale}px\`
+
+                for (const section of sections) {
+                  section.style.width = \`\${viewBox.width}px\`
+                  section.style.height = \`\${viewBox.height}px\`
+                  section.style.transformOrigin = "0 0"
+                  section.style.transform = \`scale(\${scale})\`
+                }
+              }
+            }
+
+            host.__typoraPluginMacosMarpResizeObserver?.disconnect()
+            const observer = new ResizeObserver(update)
+            host.__typoraPluginMacosMarpResizeObserver = observer
+            observer.observe(host)
+            for (const svg of root.querySelectorAll("svg[data-marpit-svg]")) observer.observe(svg)
+
+            update()
+            requestAnimationFrame(update)
+            setTimeout(update, 50)
+            setTimeout(update, 250)
+          }
+
+          const runEmbeddedScripts = (root) => {
+            if (!root || typeof root.querySelectorAll !== "function") return
+            for (const inertScript of [...root.querySelectorAll("script")]) {
+              const script = document.createElement("script")
+              for (const { name, value } of inertScript.attributes) {
+                script.setAttribute(name, value)
+              }
+              script.textContent = inertScript.textContent
+              inertScript.replaceWith(script)
+            }
+          }
+
+          const patchMathJaxLoader = () => {
+            const mathJax = typeof globalThis !== "undefined" ? globalThis.MathJax : null
+            if (!mathJax?.loader || typeof mathJax.loader.preLoad === "function") return
+            try {
+              mathJax.loader.preLoad = () => {}
+            } catch {
+              globalThis.MathJax = {
+                ...mathJax,
+                loader: {
+                  ...mathJax.loader,
+                  preLoad: () => {},
+                },
+              }
+            }
+          }
+
+          const createAbsoluteImagePathRule = plugin => {
+            const toAbsPath = (url) => {
+              let decodedURL = url
+              try {
+                decodedURL = decodeURIComponent(url)
+              } catch {}
+              const dir = plugin.utils.getLocalRootUrl()
+              const absPath = (plugin.utils.isNetworkImage(decodedURL) || plugin.utils.isSpecialImage(decodedURL))
+                ? decodedURL
+                : plugin.utils.Package.Path.resolve(dir, decodedURL)
+              return absPath.split(plugin.utils.Package.Path.sep).join("/")
+            }
+
+            return function (marp) {
+              const originalNormalizeLink = marp.normalizeLink
+              marp.normalizeLink = (url) => {
+                const normalized = originalNormalizeLink(url)
+                return toAbsPath(normalized)
+              }
+              const originalImageRule = marp.renderer.rules.image
+
+              marp.renderer.rules.image = (tokens, idx, options, env, self) => {
+                const token = tokens[idx]
+                const srcIndex = token.attrIndex("src")
+                if (srcIndex >= 0) {
+                  token.attrs[srcIndex][1] = toAbsPath(token.attrs[srcIndex][1])
+                }
+                return originalImageRule ? originalImageRule(tokens, idx, options, env, self) : self.renderToken(tokens, idx, options)
+              }
+            }
+          }
+
+          class MacosMarpPlugin extends MarpPlugin {
+            constructor(...args) {
+              super(...args)
+              const originalLazyLoad = this.lazyLoad
+              this._marpAbsoluteImagePath = () => createAbsoluteImagePathRule(this)
+              this.lazyLoad = () => {
+                patchMathJaxLoader()
+                originalLazyLoad()
+                if (!this.marp || typeof this.marp.render !== "function") {
+                  throw new Error("Failed to initialize Marp core.")
+                }
+              }
+              this.create = ($wrap, content) => {
+                if (!this.marp) {
+                  throw new Error("Marp core is not initialized.")
+                }
+                const { html, css } = this.marp.render(content)
+                const host = $wrap[0]
+                const root = host.shadowRoot || (typeof host.attachShadow === "function" ? host.attachShadow({ mode: "open" }) : host)
+                root.innerHTML = \`<style>\${css}</style>\` + html
+                prepareHost(host)
+                installResponsiveStyle(root)
+                runEmbeddedScripts(root)
+                fitSlides(host, root)
+                return root
+              }
+              this.destroy = root => {
+                const host = root?.host || root
+                host?.__typoraPluginMacosMarpResizeObserver?.disconnect()
+                if (root) root.innerHTML = ""
+              }
+            }
+          }
+
+          module.exports = { ...original, plugin: MacosMarpPlugin }
+        `,
         loader: "js",
         resolveDir: ROOT,
       }))
