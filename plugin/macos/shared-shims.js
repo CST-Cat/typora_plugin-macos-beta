@@ -40,6 +40,23 @@
     },
   }
 
+  const normalizeUserLocale = (locale) => {
+    const value = String(locale || "")
+    if (/^zh-(CN|Hans)/i.test(value) || value.toLowerCase() === "zh") return "zh-CN"
+    if (/^zh-(TW|HK|MO|Hant)/i.test(value)) return "zh-TW"
+    if (/^en/i.test(value)) return "en"
+    return value || ""
+  }
+
+  const browserLocale = normalizeUserLocale(navigator.languages?.[0] || navigator.language)
+  const typoraLocale = normalizeUserLocale(globalThis.window?._options?.userLocale)
+  if (globalThis.window && browserLocale && (!typoraLocale || (typoraLocale === "en" && browserLocale !== "en"))) {
+    globalThis.window._options = {
+      ...(globalThis.window._options || {}),
+      userLocale: browserLocale,
+    }
+  }
+
   const normalizePath = (input) => {
     if (!input) return "."
     const value = String(input).replace(/\\/g, "/")

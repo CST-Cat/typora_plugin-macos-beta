@@ -267,21 +267,52 @@ echo typora-plugin-display
 
 ### 未开启效果
 
-| 名称 | 类型 | 状态 |
-|---|---|---|
-| window_tab | core | ok |
-| markdownlint | edit | warning |
-| image_viewer | visual | ok |
+| 名称 | 类型 | 状态 | 优先级 | 最近检查 |
+|---|---|---|---|---|
+| window_tab | core | ok | P0 | 2026-06-08 |
+| markdownlint | edit | warning | P1 | 2026-06-08 |
+| image_viewer | visual | ok | P1 | 2026-06-07 |
+| markmap | diagram | ok | P1 | 2026-06-08 |
+| datatables | table | review | P2 | 2026-06-08 |
 
 ### 开启后效果
 
-| 名称 | 类型 | 状态 |
-|---|---|---|
-| window_tab | core | ok |
-| markdownlint | edit | warning |
-| image_viewer | visual | ok |
+| 名称 | 类型 | 状态 | 优先级 | 负责人 | 最近检查 | 备注 |
+|---|---|---|---|---|---|---|
+| window_tab | core | ok | P0 | Cat | 2026-06-08 | 标签切换和拖拽排序 |
+| markdownlint | edit | warning | P1 | Cat | 2026-06-08 | 规则面板与自动修复 |
+| image_viewer | visual | ok | P1 | Cat | 2026-06-07 | 看图模式和缩略图 |
+| markmap | diagram | ok | P1 | Cat | 2026-06-08 | fence 与大纲思维导图 |
+| datatables | table | review | P2 | Cat | 2026-06-08 | 搜索、排序、分页 |
+| plantUML | diagram | ok | P1 | Cat | 2026-06-07 | 本地渲染器 |
+| drawIO | diagram | ok | P1 | Cat | 2026-06-07 | XML 图表渲染 |
+| marp | slide | ok | P1 | Cat | 2026-06-07 | 幻灯片缩放显示 |
+| echarts | chart | ok | P2 | Cat | 2026-06-07 | 柱状图和主题 |
+| chart | chart | ok | P2 | Cat | 2026-06-07 | Chart.js 折线图 |
+| wavedrom | diagram | ok | P2 | Cat | 2026-06-07 | 时序图 |
+| calendar | calendar | ok | P2 | Cat | 2026-06-07 | 周视图日程 |
+| abc | music | ok | P3 | Cat | 2026-06-07 | ABC 乐谱 |
+| callouts | edit | ok | P2 | Cat | 2026-06-08 | NOTE/WARNING/SUCCESS |
+| collapse_paragraph | fold | ok | P1 | Cat | 2026-06-08 | 章节折叠 |
+| collapse_list | fold | unknown | P3 | Cat | 2026-06-06 | 嵌套列表折叠待复测 |
+| collapse_table | fold | unknown | P3 | Cat | 2026-06-06 | 表格折叠待复测 |
+| resize_table | table | ok | P2 | Cat | 2026-06-06 | 拖动列宽 |
+| resize_image | visual | ok | P2 | Cat | 2026-06-06 | 图片宽高调整 |
+| no_image | visual | ok | P3 | Cat | 2026-06-06 | 图片隐藏占位 |
+| dark | theme | ok | P0 | Cat | 2026-06-08 | 全局夜间模式 |
+| preferences | settings | ok | P0 | Cat | 2026-06-08 | 通用设置和专属设置 |
+| command_palette | command | ok | P1 | Cat | 2026-06-08 | 命令搜索与执行 |
+| commander | command | warning | P2 | Cat | 2026-06-06 | shell 兼容待观察 |
+| hotkeys | command | ok | P2 | Cat | 2026-06-06 | 快捷键清单 |
+| right_click_menu | menu | ok | P1 | Cat | 2026-06-06 | 插件分组菜单 |
+| action_buttons | menu | ok | P2 | Cat | 2026-06-08 | 右侧悬浮按钮 |
+| right_outline | outline | ok | P2 | Cat | 2026-06-06 | 右侧标题树 |
+| search_multi | search | ok | P2 | Cat | 2026-06-06 | 多关键词搜索 |
+| ripgrep | search | warning | P2 | Cat | 2026-06-06 | 本地 rg 搜索 |
+| resource_manager | asset | warning | P2 | Cat | 2026-06-06 | 缺失资源扫描 |
+| export_enhance | export | unknown | P3 | Cat | 2026-06-06 | 导出链路待复测 |
 
-开启 DataTables 后，同样的表格应出现搜索、排序、分页等交互能力。
+开启 DataTables 后，右键表格选择“增强表格”，应能看到搜索框、每页条数、列排序、列筛选下拉框和分页信息；可以搜索 `diagram`、按“状态”排序，或在“类型”列筛选 `chart`。
 
 ## 17. Markmap
 

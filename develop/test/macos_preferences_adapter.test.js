@@ -3,7 +3,13 @@ const { describe, it } = require("node:test")
 
 global.BasePlugin = global.BasePlugin || class {}
 
-const { patchCommanderSchema, addZshTranslation } = require("../../plugin/macos/adapters/preferences.js")
+const {
+  addZshTranslation,
+  hasFullPageDarkFilter,
+  patchCommanderSchema,
+  patchGlobalDarkModeSettingHandle,
+  syncGlobalDarkMode,
+} = require("../../plugin/macos/adapters/preferences.js")
 const { withMacosBuiltins } = require("../../plugin/macos/adapters/commander.js")
 const { createLocalTranslator } = require("../../plugin/macos/adapters/command_palette.js")
 
@@ -38,6 +44,98 @@ describe("macOS preferences adapter", () => {
 
     assert.equal(i18nData.commander["$option.BUILTIN.shell.zsh"], undefined)
     assert.equal(patched.commander["$option.BUILTIN.shell.zsh"], "Zsh")
+  })
+
+  it("mirrors global DARK_MODE into dark DARK_DEFAULT in one settings write", async () => {
+    const writes = []
+    const fakePlugin = {
+      utils: {
+        settings: {
+          async handle(fixedName, handler) {
+            const allSettings = { global: {}, dark: {} }
+            handler(allSettings[fixedName], allSettings)
+            writes.push(allSettings)
+          },
+        },
+        getGlobalSetting: () => ({}),
+        getBasePlugin: () => null,
+      },
+    }
+    const oldDocument = global.document
+    global.document = { body: { classList: { toggle() {} } } }
+
+    try {
+      patchGlobalDarkModeSettingHandle(fakePlugin)
+      await fakePlugin.utils.settings.handle("global", settings => {
+        settings.DARK_MODE = true
+      })
+    } finally {
+      global.document = oldDocument
+    }
+
+    assert.equal(writes[0].global.DARK_MODE, true)
+    assert.equal(writes[0].dark.DARK_DEFAULT, true)
+  })
+
+  it("applies global DARK_MODE through the loaded dark plugin as the single full-page filter", () => {
+    const calls = []
+    const globalSetting = { DARK_MODE: false }
+    const dark = {
+      config: { DARK_DEFAULT: false },
+      enableDarkMode: () => calls.push("enable"),
+      disableDarkMode: () => calls.push("disable"),
+    }
+    const fakePlugin = {
+      utils: {
+        getGlobalSetting: () => globalSetting,
+        getBasePlugin: fixedName => fixedName === "dark" ? dark : null,
+      },
+    }
+    const oldDocument = global.document
+    let toggled
+    global.document = { body: { classList: { toggle: (cls, enable) => toggled = [cls, enable] } } }
+
+    try {
+      syncGlobalDarkMode(fakePlugin, true)
+    } finally {
+      global.document = oldDocument
+    }
+
+    assert.deepEqual(toggled, ["plugin-dark-mode", false])
+    assert.equal(globalSetting.DARK_MODE, true)
+    assert.equal(dark.config.DARK_DEFAULT, true)
+    assert.deepEqual(calls, ["enable"])
+  })
+
+  it("falls back to plugin panel dark mode when the dark plugin is unavailable", () => {
+    const globalSetting = { DARK_MODE: false }
+    const fakePlugin = {
+      utils: {
+        getGlobalSetting: () => globalSetting,
+        getBasePlugin: () => null,
+      },
+    }
+    const oldDocument = global.document
+    let toggled
+    global.document = { body: { classList: { toggle: (cls, enable) => toggled = [cls, enable] } } }
+
+    try {
+      syncGlobalDarkMode(fakePlugin, true)
+    } finally {
+      global.document = oldDocument
+    }
+
+    assert.deepEqual(toggled, ["plugin-dark-mode", true])
+  })
+
+  it("does not claim a full-page filter when the light color-scheme media query is false", () => {
+    const oldWindow = global.window
+    global.window = { matchMedia: () => ({ matches: false }) }
+    try {
+      assert.equal(hasFullPageDarkFilter(true, {}), false)
+    } finally {
+      global.window = oldWindow
+    }
   })
 })
 

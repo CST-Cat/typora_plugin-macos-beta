@@ -17,9 +17,11 @@ const MARP_ENTRY = join(PLUGIN_DIR, "marp/index.js")
 const MACOS_ADAPTER_DIR = join(MACOS_DIR, "adapters")
 
 const MACOS_PLUGIN_ADAPTERS = new Map([
+  ["collapse_paragraph", join(MACOS_ADAPTER_DIR, "collapse_paragraph.js")],
   ["commander", join(MACOS_ADAPTER_DIR, "commander.js")],
   ["command_palette", join(MACOS_ADAPTER_DIR, "command_palette.js")],
   ["image_viewer", join(MACOS_ADAPTER_DIR, "image_viewer.js")],
+  ["markmap", join(MACOS_ADAPTER_DIR, "markmap.js")],
   ["markdownlint", join(MACOS_ADAPTER_DIR, "markdownlint.js")],
   ["preferences", join(MACOS_ADAPTER_DIR, "preferences.js")],
   ["right_click_menu", join(MACOS_ADAPTER_DIR, "right_click_menu.js")],

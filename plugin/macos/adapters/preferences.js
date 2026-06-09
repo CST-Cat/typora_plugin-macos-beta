@@ -52,17 +52,95 @@ const patchCommanderSchema = (schemas) => {
   return schemas
 }
 
+const syncGlobalDarkMode = (plugin, enable) => {
+  if (typeof enable !== "boolean") return
+
+  const globalSetting = plugin.utils.getGlobalSetting()
+  if (globalSetting) globalSetting.DARK_MODE = enable
+
+  const dark = plugin.utils.getBasePlugin("dark")
+  const useFullPageFilter = hasFullPageDarkFilter(enable, dark)
+  document.body.classList.toggle("plugin-dark-mode", enable && !useFullPageFilter)
+  if (!dark) return
+
+  dark.config.DARK_DEFAULT = enable
+  if (enable) {
+    dark.enableDarkMode()
+  } else {
+    dark.disableDarkMode()
+  }
+}
+
+const patchGlobalDarkModeSettingHandle = (plugin) => {
+  const settings = plugin.utils.settings
+  if (settings.__typoraPluginMacosDarkModePatched) return false
+
+  const originalHandle = settings.handle.bind(settings)
+  settings.handle = async (fixedName, handler) => {
+    let shouldSyncDarkMode = false
+    let darkMode
+
+    const wrappedHandler = (pluginSettings, allSettings) => {
+      handler(pluginSettings, allSettings)
+      if (fixedName !== "global") return
+
+      const value = allSettings?.global?.DARK_MODE
+      if (typeof value !== "boolean") return
+
+      shouldSyncDarkMode = true
+      darkMode = value
+      allSettings.dark = allSettings.dark || {}
+      allSettings.dark.DARK_DEFAULT = value
+    }
+
+    const result = await originalHandle(fixedName, wrappedHandler)
+    if (shouldSyncDarkMode) syncGlobalDarkMode(plugin, darkMode)
+    return result
+  }
+
+  settings.__typoraPluginMacosDarkModePatched = true
+  return true
+}
+
+const hasFullPageDarkFilter = (enable, dark) => {
+  if (!enable || !dark) return false
+  if (typeof window === "undefined") return true
+  return window.matchMedia?.("(prefers-color-scheme: light)")?.matches ?? true
+}
+
 class MacosPreferencesPlugin extends PreferencesPlugin {
+  _baseProcess = this.process
+  _settingsHandlePatched = false
+
   _getSchemas = () => {
     const compile = require("../../preferences/schemas.js")
     const schemas = compile(this.entities.form.dsl, addZshTranslation(this.i18n.allData))
     return patchCommanderSchema(schemas)
   }
+
+  process = () => {
+    this._patchSettingsHandle()
+    this._baseProcess()
+    this._syncGlobalDarkMode(this.utils.getGlobalSetting()?.DARK_MODE)
+    this.utils.eventHub?.addEventListener(this.utils.eventHub.eventType.allPluginsHadInjected, () => {
+      this._syncGlobalDarkMode(this.utils.getGlobalSetting()?.DARK_MODE)
+    })
+  }
+
+  _patchSettingsHandle = () => {
+    if (this._settingsHandlePatched) return
+    this._settingsHandlePatched = patchGlobalDarkModeSettingHandle(this)
+  }
+
+  _syncGlobalDarkMode = enable => syncGlobalDarkMode(this, enable)
 }
 
 module.exports = {
   ...original,
   plugin: MacosPreferencesPlugin,
   addZshTranslation,
+  hasFullPageDarkFilter,
   patchCommanderSchema,
+  patchGlobalDarkModeSettingHandle,
+  syncGlobalDarkMode,
 }
