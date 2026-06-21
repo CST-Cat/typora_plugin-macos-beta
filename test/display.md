@@ -522,6 +522,7 @@ console.table(displayFenceEnhance(["copy", "fold", "indent", "highlight"]));
 ## 41. 书签管理
 
 - 英文名：`bookmark`
+-
 - JS 文件：`plugin/bookmark.js`
 
 ### 效果
@@ -607,7 +608,56 @@ TP_DISPLAY_RG_ALPHA test/display.md
 
 打开升级插件动作，应能检查版本、展示更新信息，并在失败时显示网络或权限错误。
 
-## 49. Timeline
+## Kanban
+
+- 英文名：`kanban`
+- JS 文件：`plugin/kanban.js`
+
+### 效果
+
+```kanban
+use strict
+# macOS 移植看板
+
+## 待处理
+- 修复权限提示(**EPERM** 日志降级)
+- 检查标签页遮挡(`window_tab`)
+
+## 进行中
+- 标签栏第二行布局(避免和原生标题栏冲突)
+- Helper RPC 路径白名单
+
+## 已完成
+- bundle 注入
+- loader 安装
+- token 校验
+```
+
+## Chat
+
+- 英文名：`chat`
+- JS 文件：`plugin/chat.js`
+
+### 效果
+
+```chat
+---
+useStrict: false
+showNickname: true
+showAvatar: true
+allowMarkdown: true
+senderNickname: me
+timeNickname: time
+---
+
+time: 今天 00:30
+tester: 插件是否加载完成？
+me: 已看到 `window.__TP_MACOS__`，并且标签页出现。
+tester: 右键菜单和偏好设置呢？
+me: 请在正文右键，或用命令面板搜索 **preferences**。
+```
+
+## 51. Timeline
 
 - 英文名：`timeline`
 - JS 文件：`plugin/timeline.js`
@@ -632,7 +682,7 @@ TP_DISPLAY_RG_ALPHA test/display.md
 同一段内容应渲染为时间线组件。
 ```
 
-## 50. ECharts
+## 52. ECharts
 
 - 英文名：`echarts`
 - JS 文件：`plugin/echarts/index.js`
@@ -657,7 +707,7 @@ option = {
 }
 ```
 
-## 51. Chart
+## 53. Chart
 
 - 英文名：`chart`
 - JS 文件：`plugin/chart/index.js`
@@ -685,7 +735,7 @@ config = {
 }
 ```
 
-## 52. WaveDrom
+## 54. WaveDrom
 
 - 英文名：`wavedrom`
 - JS 文件：`plugin/wavedrom/index.js`
@@ -709,7 +759,7 @@ config = {
 }
 ```
 
-## 53. Calendar
+## 55. Calendar
 
 - 英文名：`calendar`
 - JS 文件：`plugin/calendar/index.js`
@@ -780,7 +830,7 @@ calendar.createEvents([
 ])
 ```
 
-## 54. ABC
+## 56. ABC
 
 - 英文名：`abc`
 - JS 文件：`plugin/abc/index.js`
@@ -806,7 +856,7 @@ V:Bass clef=bass name="Bass"
 
 应渲染出标题、速度、拍号、调号、和弦标记，以及 Melody/Bass 两条五线谱声部。
 
-## 55. DrawIO
+## 57. DrawIO
 
 - 英文名：`drawIO`
 - JS 文件：`plugin/drawIO.js`
@@ -856,7 +906,7 @@ V:Bass clef=bass name="Bass"
 }
 ```
 
-## 56. PlantUML
+## 58. PlantUML
 
 - 英文名：`plantUML`
 - JS 文件：`plugin/plantUML.js`
@@ -876,7 +926,7 @@ Helper --> Loader : ok
 @enduml
 ```
 
-## 57. Marp
+## 59. Marp
 
 - 英文名：`marp`
 - JS 文件：`plugin/marp/index.js`
@@ -903,7 +953,7 @@ macOS smoke sample
 - JS entry path
 ```
 
-## 58. Callouts
+## 60. Callouts
 
 - 英文名：`callouts`
 - JS 文件：`plugin/callouts.js`

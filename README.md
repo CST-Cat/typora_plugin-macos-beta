@@ -1,503 +1,506 @@
-English | [简体中文](https://github.com/obgnail/typora_plugin/blob/master/README-cn.md)
-
-> macOS beta port: this repository can run Typora Plugin in macOS Typora through a WebKit bundle plus local helper. See [README-macos-beta.md](README-macos-beta.md) for the migration route, install steps, changes, tests, and known limits.
-
-<div align="center">
-    <h1>Typora Plugin</h1>
-    <img src="assets/typora_plugin.png" alt="typora_plugin" width="400">
-    <p align="center">
-        <a href="https://github.com/obgnail/typora_plugin/releases/latest"><img src="https://img.shields.io/github/v/release/obgnail/typora_plugin"></a>
-        <a href="https://github.com/obgnail/typora_plugin/stargazers"><img src="https://img.shields.io/github/stars/obgnail/typora_plugin?style=flat"></a>
-        <a href="https://github.com/obgnail/typora_plugin/issues"><img src="https://img.shields.io/github/issues-closed/obgnail/typora_plugin.svg"></a>
-        <a href="https://github.com/obgnail/typora_plugin/tree/master/plugin"><img src="https://img.shields.io/badge/implementation-native-greenbule"></a>
-        <a href="https://github.com/obgnail/typora_plugin?tab=readme-ov-file#%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E6%96%B9%E6%B3%95%E4%B8%80%E8%87%AA%E5%8A%A8"><img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0085a1"></a>
-        <a href="https://github.com/obgnail/typora_plugin/blob/master/LICENSE"><img src="https://img.shields.io/github/license/obgnail/typora_plugin"></a>
-        <a href="https://deepwiki.com/obgnail/typora_plugin"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
-    </p>
-</div>
-
-## Plugin List
-
-| Plugin：Navigation & Management             | Feature                    | Default |
-| :------------------------------------------ | :------------------------- | :------ |
-| [window_tab](#window_tab)                   | Window Tab Bar             |         |
-| [search_multi](#search_multi)               | Multi-Fields File Searcher |         |
-| [auto_number](#auto_number)                 | Auto numbering             |         |
-| [bookmark](#bookmark)                       | Bookmark manager           | ×       |
-| [cursor_history](#cursor_history)           | Cursor History             | ×       |
-| [preferences](#preferences)                 | Preferences                |         |
-| [updater](#updater)                         | One-click plugin update    |         |
-| [asset_root_redirect](#asset_root_redirect) | Resource Redirection       | ×       |
-
-| Plugin：Enhance Editing                     | Feature                                     | Default |
-| :------------------------------------------ | :------------------------------------------ | :------ |
-| [collapse_paragraph](#collapse_paragraph)   | Chapter Folding                             | ×       |
-| [collapse_list](#collapse_list)             | List Folding                                | ×       |
-| [collapse_table](#collapse_table)           | Table Folding                               | ×       |
-| [md_padding](#md_padding)                   | Chinese-English Text Spacer                 |         |
-| [slash_commands](#slash_commands)           | Slash Commands                              |         |
-| [mouse_gestures](#mouse_gestures)           | Mouse Gestures                              | ×       |
-| [templater](#templater)                     | File Templater                              |         |
-| [fence_enhance](#fence_enhance)             | Enhance Fence                               |         |
-| [right_outline](#right_outline)             | Right Outline                               |         |
-| [commander](#commander)                     | Commander                                   |         |
-| [command_palette](#command_palette)         | Command Palette                             |         |
-| [right_click_menu](#right_click_menu)       | Right-Click Menu                            |         |
-| [pie_menu](#pie_menu)                       | Pie menu                                    | ×       |
-| [datatables](#datatables)                   | Enhance Table                               | ×       |
-| [resize_table](#resize_table)               | Table Resizer                               |         |
-| [resize_image](#resize_image)               | Image Resizer                               |         |
-| [easy_modify](#easy_modify)                 | Editing tools                               |         |
-| [editor_width_slider](#editor_width_slider) | Adjust writing area width                   |         |
-| [cjk_symbol_pairing](#cjk_symbol_pairing)   | CJK Symbol Pairing                          |         |
-| [text_stylize](#text_stylize)               | Text stylization                            |         |
-| [resource_manager](#resource_manager)       | Resource Management                         |         |
-| [markdownlint](#markdownlint)               | Markdownlint Check                          |         |
-| [export_enhance](#export_enhance)           | Avoid image loss when exporting to HTML/PDF | ×       |
-
-| Plugin：View & Theme                | Feature                                                      | Default |
-| :---------------------------------- | :----------------------------------------------------------- | :------ |
-| [dark](#dark)                       | Dark mode                                                    |         |
-| [no_image](#no_image)               | No image mode                                                |         |
-| [blur](#blur)                       | Blur mode                                                    |         |
-| [myopic_defocus](#myopic_defocus)   | Defocus Comfort Mode                                         |         |
-| [read_only](#read_only)             | Read-only mode                                               |         |
-| [truncate_text](#truncate_text)     | Hide content to improve performance for large files          | ×       |
-| [image_viewer](#image_viewer)       | Image viewer                                                 |         |
-| [static_markers](#static_markers)   | Static Markers                                               | ×       |
-| [sidebar_enhance](#sidebar_enhance) | Drag & drop to rearrange、Display non-Markdown files、Keep Fold State |         |
-
-| Plugin：Component     | Feature                       | Default |
-| :-------------------- | :---------------------------- | :------ |
-| [markmap](#markmap)   | Provides Markmap support      |         |
-| [echarts](#echarts)   | Provides Echarts support      |         |
-| [chart](#chart)       | Provides Chart.js support     |         |
-| [drawIO](#drawIO)     | Provides DrawIO support       |         |
-| [abc](#abc)           | Provides abc.js support       |         |
-| [calendar](#calendar) | Provides tui.calendar support |         |
-| [wavedrom](#wavedrom) | Provides WaveDrom support     |         |
-| [marp](#marp)         | Provides Marp support         |         |
-| [plantUML](#plantUML) | Provides PlantUML support     | ×       |
-| [callouts](#callouts) | Provides Callouts support     |         |
-| [kanban](#kanban)     | Kanban                        |         |
-| [timeline](#timeline) | Timeline                      |         |
-| [chat](#chat)         | Chat                          |         |
-
-| Plugin：Advanced                      | Feature                                                   | Default |
-| :------------------------------------ | :-------------------------------------------------------- | :------ |
-| [hotkeys](#hotkeys)                   | Hotkey registration center (Advanced)                     |         |
-| [action_buttons](#action_buttons)     | Add function buttons in the lower right corner (Advanced) |         |
-| [custom](#custom)                     | Open platform for user-defined plugins (Advanced)         |         |
-| [remote_control](#remote_control)     | Typora Automation (Advanced)                              | ×       |
-| [cipher](#cipher)                     | Encrypt files                                             | ×       |
-| [ripgrep](#ripgrep)                   | Search files using ripgrep                                | ×       |
-| [article_uploader](#article_uploader) | One-click upload blog to supported platforms              | ×       |
-
-> If you have other needs or find bugs, feel free to [open an issue](https://github.com/obgnail/typora_plugin/issues/new). PRs are also welcome. If you find this project helpful, please give me a star ⭐
-
-## Q&A
-
-- **Is my Typora supported?** Typora's version should be ≥ 0.9.98 (the last free version).
-- **How to modify plugin configurations?** Right-click menu -> Interactive Plugins -> Preferences. **Respect all user choices**. Any plugin or feature can be permanently enabled/disabled.
-- **How to upgrade plugins?** Right-click menu -> Interactive Plugins -> Preferences -> Check for Updates.
-- **How to uninstall plugins?** Right-click menu -> Interactive Plugins -> Preferences -> Uninstall Plugins.
-- **How to develop plugins?** No Build Time, No need to install development environment. Please refer to [Readme](https://github.com/obgnail/typora_plugin/blob/master/plugin/custom/README-en.md) for details.
-- **Does it support Typora for Mac?** I don't have a Mac device, so I haven't tested it.
-- **Any other questions?** Please ask [AI Wiki](https://deepwiki.com/obgnail/typora_plugin).
+## 功能测试汇总
+
+| 功能 | 状态 |
+|---|---|
+| 标签页管理 | 生效 |
+| 格式检查 | 生效 |
+| 右侧大纲 | 生效 |
+| 多元文字搜索 | 生效 |
+| 只读模式 | 生效 |
+| 夜间模式 | 生效 |
+| 无图模式 | 生效 |
+| 模糊模式 | 生效 |
+| 命令行环境 | 生效 |
+| 命令面板 | 生效 |
+| 中英文混排优化 | 生效 |
+| 标记常显 | 生效 |
+| 离焦视力舒缓 |  |
+| 图片放缩 |  |
+| 表格放缩 |  |
+| DataTables |  |
+| Markmap | 生效 |
+| 自动编号 | 生效 |
+| 代码块增强 | 生效 |
+| 章节折叠 | 生效 |
+| 列表折叠 | 生效 |
+| 表格折叠 | 生效 |
+| 图片查看 | 生效 |
+| 文段截断 |  |
+| 导出增强 |  |
+| 侧边栏增强 |  |
+| 文字风格化 | 生效 |
+| 加密文件 | 生效 |
+| 编辑工具 |  |
+| 二级插件 |  |
+| 悬浮动作按钮 | 生效 |
+| 鼠标手势 |  |
+| 斜杠命令 | 生效 |
+| 中文符号配对 | 生效 |
+| 右键菜单 |  |
+| 圆盘菜单 |  |
+| 插件配置 |  |
+| 快捷键中心 | 生效 |
+| 资源管理 |  |
+| 资源重定向 |  |
+| 书签管理 |  |
+| 文件模板 |  |
+| 写作区宽度调整 | 生效 |
+| 文章上传 |  |
+| Ripgrep |  |
+| 光标历史 |  |
+| 远程控制 |  |
+| 升级插件 |  |
+| Kanban | 生效 |
+| Chat | 生效 |
+| Timeline | 生效 |
+| ECharts | 生效 |
+| Chart | 生效 |
+| WaveDrom | 生效 |
+| Calendar | 生效 |
+| ABC | 生效 |
+| DrawIO | 生效 |
+| PlantUML | 生效 |
+| Marp | 生效 |
+| Callouts | 生效 |
 
-## How to Use: Windows/Linux Platform
+38/60 功能生效
+## 前言
 
-Visit [Video Installation Tutorial](https://github.com/obgnail/typora_plugin/issues/847)
+记录手工测试移植后的功能
 
-1. [Download](https://github.com/obgnail/typora_plugin/releases/latest) the plugin source code package and unzip it.
+### 标签页管理
 
-2. Go to the Typora installation path and find the folder A containing `window.html`.
+生效
 
-   - For the official version of Typora, the path is `./resources/window.html`.
+![image-20260605200355286](test/assets/image-20260605200355286.png)
 
-   - For the beta version of Typora, the path is `./resources/app/window.html`.
 
-3. Paste the unzipped plugin folder into folder A.
 
-4. Go to the folder `A/plugin/bin/`.
+### 格式检查
 
-   - Windows: Right-Click on the file `installw_windows.ps1`. Select 'Run with PowerShell'.
-   - Linux: Run `install_linux.sh` as administrator.
+生效
 
-5. Verification: Restart Typora, right-click in the main text area, and if you see the plugin items, everything is fine.
+![image-20260605200451059](test/assets/image-20260605200451059.png)
 
-|           | Official Version                             | Beta Version                                 |
-| --------- | -------------------------------------------- | -------------------------------------------- |
-| Steps 2-3 | ![typora_dir_new](assets/typora_dir_new.png) | ![typora_dir_old](assets/typora_dir_old.png) |
+### 右侧大纲
 
-|        | Windows                                        | Linux                                      |
-| ------ | ---------------------------------------------- | ------------------------------------------ |
-| Step 4 | ![install_windows](assets/install_windows.png) | ![install_linux](assets/install_linux.png) |
+生效
 
-## How to Use: Archlinux Platform
+![image-20260605200519193](test/assets/image-20260605200519193.png)
 
-> Currently, this method is only for the Archlinux platform, see [aur/typora-plugin](https://aur.archlinux.org/packages/typora-plugin)
 
-```sh
-yay -S typora-plugin
-```
 
-## Plugin Usage Instructions
+### 多元文字搜索
 
-All plugins provide seven usage methods:
+搜索生效
 
-- Keyboard enthusiasts:
-  - Command Palette (see `command_palette` plugin)
-  - Slash commands  (see `slash_commands` plugin)
-  - Shortcut keys (see `hotkeys` plugin)
-- Mouse enthusiasts:
-  - Right-click in the main text area (see `right_click_menu` plugin)
-  - Mouse gestures (see `mouse_gestures` plugin)
-  - Quick buttons (see `action_buttons` plugin)
-  - Pie menu（see `pie_menu` plugin）
+![image-20260605200625424](test/assets/image-20260605200625424.png)
 
-## Navigation & Management
+### 只读模式
 
-### window_tab
+点按无反应，只读生效
 
-![window_tab](assets/window_tab.gif)
+![image-20260605200940488](test/assets/image-20260605200940488.png)
 
-### search_multi
 
-By using Google search syntax and combining different criteria to accurately search for files.
 
-![search_mutli](assets/search_mutli.gif)
+### 夜间模式
 
-### auto_number
+生效
 
-![auto_number](assets/auto_number.png)
+![image-20260605201133427](test/assets/image-20260605201133427.png)
 
-Unlike other implementations using theme CSS, this plugin perfectly solves the problem of no numbering in the sidebar after exporting to PDF by modifying the built-in function :)
+### 无图模式
 
-### bookmark
+生效
 
-Usage:
+![image-20260605201513588](test/assets/image-20260605201513588.png)
 
-1. Use alt + click on the text content to bookmark.
-2. This will automatically bring up the bookmark manager. Click on the bookmark above to jump to the bookmark.
+### 模糊模式
 
-### cursor_history
+生效
 
-- hotkey for the previous cursor: alt+←
-- hotkey for the next cursor: alt+→
+![image-20260605201622422](test/assets/image-20260605201622422.png)
 
-> This plugin is disabled by default and needs to be manually enabled.
 
-### preferences
 
-Preferences
+### 命令行环境
 
-### updater
+生效
 
-Upgrade Plugin.
+![image-20260606015115811](test/assets/image-20260606015115811.png)
 
-### asset_root_redirect
 
-If you mainly use Obsidian or Joplin to manage files and occasionally use Typora to open files, you will encounter a problem: both Obsidian and Joplin put local resources in the same directory, but Typora defaults to using relative paths to reference local resources.
 
-> This plugin is disabled by default and needs to be manually enabled.
 
-## Enhance Editing
+### 命令面板
 
-### collapse_paragraph
+生效
 
-![collapse_paragraph](assets/collapse_paragraph.gif)
+![image-20260606143655439](test/assets/image-20260606143655439.png)
 
-### collapse_list
 
-Fold/expand unordered lists, ordered lists, task lists.
 
-### collapse_table
+### 中英文混排优化
 
-Fold/expand tables.
+生效，自动加了空格
 
-### md_padding
+中文 english 中文
 
-Add spaces between Chinese and English, Chinese and numbers when mixed.
 
-![md_padding](assets/md_padding.gif)
+### 标记常显
 
-### slash_commands
+生效
 
-Similar to Notion's slash command.
+开启后：
 
-![slash_commands](assets/slash_commands.gif)
+![PixPin_2026-06-09_11-08-20](test/assets/PixPin_2026-06-09_11-08-20.webp)
 
-### mouse_gestures
+开启前：
 
-Mouse gestures in Typora.
+![PixPin_2026-06-09_11-20-15](test/assets/PixPin_2026-06-09_11-20-15.webp)
 
-### templater
+### 离焦视力舒缓
 
-Similar to Obsidian's file template function, quickly create files based on templates.
 
-![templater](assets/templater.gif)
 
-### fence_enhance
 
-![fence_enhance](assets/fence_enhance.png)
+### 图片放缩
 
-### right_outline
 
-Typora's sidebar cannot display both [File] and [Outline] simultaneously. To solve this problem, this plugin adds an [Outline] on the right.
 
-### commander
 
-![commander](assets/commander.gif)
+### 表格放缩
 
-### command_palette
 
-Similar to VSCode's command palette (Ctrl+Shift+P)
 
-![command_palette](assets/command_palette.png)
 
-### right_click_menu
+### DataTables
 
-All plugins support direct invocation through the right-click menu. Mouse enthusiasts can use the right-click menu as the main way to call all plugins.
 
-### pie_menu
 
-Pie Menu. Usage:
 
-- `Open circular menu`: Ctrl + right mouse button
-- `Rotate circular menu`: Middle mouse button
-- `Pin the circular menu, so it doesn't automatically disappear`: Left mouse button in the middle of the circle
-- `Expand the circular menu, so it doesn't automatically collapse`: Right mouse button in the middle of the circle
+### Markmap
 
-### datatables
+生效
 
-Enhance tables. Provides functions such as search, filter, pagination, and sorting.
+![image-20260608234544614](test/assets/image-20260608234544614.png)
 
-Usage: Place the cursor on the table -> Right-click menu -> Interactive Plugins -> Table Enhancement.
+![image-20260607012057744](test/assets/image-20260607012057744.png)
 
-![datatables](assets/datatables.png)
 
-### resize_table
+### 自动编号
 
-`ctrl + mouse drag`: Modify the row height and column width of the table.
+生效
 
-![resize_table](assets/resize_table.gif)
+![image-20260607004838923](test/assets/image-20260607004838923.png)
 
-### resize_image
 
-`alt + mouse scroll`: Adjust the image size.
 
-### easy_modify
 
-This plugin is a collection of commonly used editing tools, currently including:
+### 代码块增强
 
-1. Copy title path
-2. Promote the title level of the selected paragraph
-3. Demote the title level of the selected paragraph
-4. Convert line break CRLF to LF
-5. Convert line break LF to CRLF
-6. Remove invisible characters
-7. Generate mind map based on the document outline: mindmap
-8. Generate mind map based on the document outline: graph
-9. Extract selected text to a new file
-10. Add trailing spaces
+生效，可折叠
 
-### editor_width_slider
+![image-20260607012246169](test/assets/image-20260607012246169.png)
 
-Adjust the width of the writing area.
 
-### cjk_symbol_pairing
 
-Automatically pair symbols when typing `《 【 （ ' " 「`.
 
-### text_stylize
+### 章节折叠
 
-![text_stylize](assets/text_stylize.gif)
+生效
 
-### resource_manager
+开启后：
 
-Resource management, cleanup of unused images
+![image-20260610134613574](test/assets/image-20260610134613574.png)
 
-### markdownlint
+开启前：
 
-Check whether the current file complies with the markdown best practices.
+![image-20260610134640493](test/assets/image-20260610134640493.png)
 
-### export_enhance
+### 列表折叠
 
-When exporting HTML/PDF, convert images to base64 to avoid image loss.
+生效
 
-## View & Theme
+开启前：
 
-### dark
+![image-20260610134807829](test/assets/image-20260610134807829.png)
 
-Dark Mode
+开启后：
 
-### no_image
+![image-20260610134914248](test/assets/image-20260610134914248.png)
 
-No Image Mode
 
-### blur
+### 表格折叠
 
-After enabling, only the currently focused component is visible, the rest are blurred. It can be used to prevent peeking.
+生效
 
-> This plugin can only be used with the official version of Typora.
+开启前：
 
-### myopic_defocus
+![image-20260610135027791](test/assets/image-20260610135027791.png)
 
-Defocus Comfort Mode
+开启后：
 
-### read_only
+![image-20260610135051863](test/assets/image-20260610135051863.png)
 
-In read-only mode, the document cannot be edited (after enabling, the bottom right corner of the statistics area will show `ReadOnly`).
+### 图片查看
 
-### truncate_text
+生效
 
-The rendering performance of large files in Typora is very poor. Use this plugin to temporarily hide content (just hide the display, not modify the file) to improve rendering performance. It can also be used to prevent peeking.
+![image-20260609112217973](test/assets/image-20260609112217973.png)
 
-> Principle: By setting the display style of DOM elements to none, elements are hidden so that they do not occupy a position in the rendering tree, and operations on hidden elements do not cause reflow of other elements.
 
-### image_viewer
 
-One-stop image viewing, and provides simple image editing.
+### 文段截断
 
-![image_viewer](./assets/image_viewer.png)
 
-### static_markers
 
-Say goodbye to distracting format refreshes. This plugin keeps your Markdown syntax markers always visible and static.
 
-This plugin disables the auto-hiding feature for syntax markers in WYSIWYG mode. It ensures that all Markdown characters—like **, ##, and _—remain persistently visible around your text, just as they would in a source code editor.
+### 导出增强
 
-![static_markers](./assets/static_markers.png)
 
-> This plugin is disabled by default and needs to be manually enabled.
 
-### sidebar_enhance
 
-- Drag & drop outline to rearrange
-- Display non-Markdown files in the sidebar
-- Keep Fold Outline State
-- Customize Sidebar File Icons
-- Display File Count
+### 侧边栏增强
 
-## Component
 
-### markmap
 
-![markmap](assets/markmap.gif)
+### 文字风格化
 
-### echarts
+生效
 
-![echarts](assets/echarts.png)
+![image-20260606143923667](test/assets/image-20260606143923667.png)
 
-### chart
+### 加密文件
 
-![chart](./assets/chart.png)
+生效
 
-### drawIO
+![image-20260610014847226](test/assets/image-20260610014847226.png)
 
-![drawIO](./assets/drawIO.png)
+![image-20260610014905497](test/assets/image-20260610014905497.png)
 
-### abc
+![image-20260610015049303](test/assets/image-20260610015049303.png)
 
-![abcjs](./assets/abcjs.png)
 
-### calendar
 
-![calendar](./assets/calendar.png)
+### 编辑工具
 
-### wavedrom
 
-![wavedrom](./assets/wavedrom.png)
 
-### marp
 
-Use markdown to create PPT.
+### 二级插件
 
-### plantUML
 
-![plantUML](./assets/plantUML.png)
 
-Due to the B/S architecture of plantUML, a rendering server is required. Suggest using Docker to install:
 
-```bash
-docker pull plantuml/plantuml-server:jetty
-docker run -d --name plantuml-server -p 8080:8080 plantuml/plantuml-server:jetty
-```
+### 悬浮动作按钮
 
-### callouts
+生效
 
-![callouts](./assets/callouts.png)
+![image-20260609112240297](test/assets/image-20260609112240297.png)
 
-### kanban
 
-![kanban](assets/kanban.png)
 
-### timeline
 
-![timeline](./assets/timeline.png)
+### 鼠标手势
 
-### chat
 
-![chat](./assets/chat.png)
 
-## Advanced
+### 斜杠命令
 
-### hotkeys
+生效
 
-> This plugin is an advanced plugin, only available to users with a JavaScript background.
+![image-20260607004939374](test/assets/image-20260607004939374.png)
 
-Bind hotkeys to [any plugin system function] or [any custom function] in a declarative form.
+![image-20260607004955947](test/assets/image-20260607004955947.png)
 
-### action_buttons
 
-> This plugin is an advanced plugin, only available to users with a JavaScript background.
 
-Similar to hotkeys, set function buttons for [any plugin system function] in a declarative form.
 
-### custom
 
-> This plugin is an advanced plugin, only available to users with a JavaScript background.
 
-Provide open capabilities, support users to write their own plugins.
 
-For specific usage, please refer to [README.md](https://github.com/obgnail/typora_plugin/blob/master/plugin/custom/README.md).
+### 中文符号配对
 
-### remote_control
+生效
 
-Expose all capabilities including the typora-plugin in the form of `JSON RPC` for external manipulation of Typora.
+《》「」【】《“”》
 
-For specific usage, please refer to [README.md](https://github.com/obgnail/typora_plugin/blob/master/plugin/remote_control/README.md).
 
-> This plugin is an advanced plugin, only available to developers. After enabling this plugin, the external will have both node and browser environments, which can fully control the computer, so if you are not a developer, please do not enable it.
+### 右键菜单
 
-### cipher
 
-Encrypt File.
 
-### ripgrep
 
-Typora comes with ripgrep. This plugin supports using the built-in ripgrep to search files.
+### 圆盘菜单
 
-> To use this plugin, you need to be familiar with the ripgrep tool. This plugin is disabled by default and needs to be manually enabled.
 
-### article_uploader
 
-The user clicks or uses a shortcut key to trigger the automatic publishing function of the current article. The program automatically publishes blog articles to major platforms according to user configuration.
 
-For specific usage, refer to: [README.md](https://github.com/obgnail/typora_plugin/blob/master/plugin/article_uploader/README.md). Taking uploading to CSDN as an example, the GIF is as follows:
+### 插件配置
 
-![CSDN Success Demonstration](https://my-picture-bed1-1321100201.cos.ap-beijing.myqcloud.com/mypictures/CSDN%E6%88%90%E5%8A%9F%E6%BC%94%E7%A4%BA.gif)
 
-## Acknowledgements
 
-- GPL: [PlantUML](https://plantuml.com/) | [Refractify Myopic Defocus](https://chromewebstore.google.com/detail/refractify-myopic-defocus/dpnfdlnkgojjihdmgmacnmheflkojijm?hl=en)
-- Apache: [ECharts](https://echarts.apache.org/zh/index.html) | [draw.io](https://github.com/jgraph/drawio)
-- MIT: [markmap](https://markmap.js.org/) | [Chart.js](https://www.chartjs.org/) | [abcjs](https://github.com/paulrosen/abcjs) | [tui.calendar](https://github.com/nhn/tui.calendar) | [Marp](https://marp.app/) | [WaveDrom](https://wavedrom.com/) | [DataTables](https://github.com/DataTables/DataTables) | [markdownlint](https://github.com/DavidAnson/markdownlint)
-- no-licence: [typora-tabbar-plugin](https://github.com/gatziourasd/typora-tabbar-plugin) | [typora-side-by-side](https://github.com/gruvw/typora-side-by-side) | [md-padding](https://github.com/)
 
-## Conclusion
+### 快捷键中心
 
-**This project follows the MIT license, feel free to enjoy it.**
+生效
 
-If you find it useful, please give it a star ⭐, and feel free to recommend it to like-minded friends.
+![image-20260610162738952](test/assets/image-20260610162738952.png)
+
+
+
+
+### 资源管理
+
+
+
+
+### 资源重定向
+
+
+
+
+### 书签管理
+
+
+
+
+### 文件模板
+
+
+
+
+### 写作区宽度调整
+
+生效
+
+开启后：
+
+![image-20260607013206158](test/assets/image-20260607013206158.png)
+
+未开启：
+
+![image-20260607013319519](test/assets/image-20260607013319519.png)
+
+
+
+
+### 文章上传
+
+
+
+
+### Ripgrep
+
+
+
+
+### 光标历史
+
+
+
+
+### 远程控制
+
+
+
+
+### 升级插件
+
+
+
+### Kanban
+
+生效
+
+![image-20260621144134346](test/assets/image-20260621144134346.png)
+
+
+
+
+### Chat
+
+生效
+
+![image-20260621144206735](test/assets/image-20260621144206735.png)
+
+
+
+
+
+
+### Timeline
+
+生效
+
+![image-20260607123102739](test/assets/image-20260607123102739.png)
+
+
+
+
+### ECharts
+
+生效
+
+![image-20260607123244525](test/assets/image-20260607123244525.png)
+
+
+
+### Chart
+
+生效
+
+![image-20260607123311734](test/assets/image-20260607123311734.png)
+
+
+### WaveDrom
+
+生效
+
+![image-20260607132058128](test/assets/image-20260607132058128.png)
+
+
+
+### Calendar
+
+生效
+
+![image-20260607133101125](test/assets/image-20260607133101125.png)
+
+### ABC
+
+生效
+
+![image-20260607162837902](test/assets/image-20260607162837902.png)
+
+
+### DrawIO
+
+生效
+
+![image-20260609105106029](test/assets/image-20260609105106029.png)
+
+
+
+### PlantUML
+
+生效
+
+![image-20260609105133283](test/assets/image-20260609105133283.png)
+
+
+
+
+### Marp
+
+生效
+
+![PixPin_2026-06-09_10-52-01](test/assets/PixPin_2026-06-09_10-52-01.webp)
+
+### Callouts
+
+生效
+
+![image-20260607163431601](test/assets/image-20260607163431601.png)
